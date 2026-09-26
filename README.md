@@ -91,12 +91,12 @@ is procedural: spatial channels (distance gain, lowpass, pan, reverb send), room
 echoes ray-cast against the level so small rooms answer quickly and halls slowly,
 a cave reverb generated at startup, and a heartbeat that quickens as danger nears.
 
-On top of it, `SampleBank` (`samples.ts`) plays recorded one-shots for the call,
-footsteps, stones, crystal, bell, doors, Warden clicks and shrieks, pickups, the
-Gate, deaths and UI — plus two looping ambient beds that crossfade between the
-title screen and gameplay. Samples play through the same channels as the
-synthesis, with a slight random playback rate so repeats differ; the crystal is
-retuned by its pitch index and the bell by its group.
+On top of it, `SampleBank` (`samples.ts`) plays recorded one-shots for stones,
+crystal, bell, doors, Warden clicks and shrieks, pickups, the Gate, drips,
+deaths and UI — plus two looping ambient beds that crossfade between the title
+screen and gameplay. Samples play through the same channels as the synthesis,
+with a slight random playback rate so repeats differ; the crystal is retuned by
+its pitch index and the bell by its group.
 
 **Every sound falls back to its synthesized recipe** when the sample is missing
 or has not decoded yet, so the game is fully playable with no audio assets
@@ -109,12 +109,10 @@ client reads that manifest first, so nothing absent is ever requested.
 
 Everything in `src/assets/audio/` was generated with **ElevenLabs** — sound
 effects with `eleven_text_to_sound_v2`, and the title score with
-`eleven_music_v2`. 34 files, 1.7 MB.
+`eleven_music_v2`. 25 files, 1.7 MB.
 
 | Sound | Files | Used for |
 | --- | --- | --- |
-| `call-short`, `call-long` | 2 + 1 | The creature's chirp and its charged call, replayed through every echo tap |
-| `step-stone`, `step-water` | 3 + 3 | Footsteps on dry stone and through shallow water |
 | `stone-throw`, `stone-hit`, `pickup` | 1 + 2 + 1 | Throwing, landing and gathering stones |
 | `crystal`, `bell` | 1 + 1 | Resonance crystals (retuned per pitch) and bronze bells (retuned per group) |
 | `door-open`, `door-close`, `tick` | 1 + 1 + 1 | Stone slabs and the timed-door countdown |
@@ -126,8 +124,13 @@ effects with `eleven_text_to_sound_v2`, and the title score with
 | `ambience-loop`, `title-loop` | 1 + 1 | Cave bed (30 s) and title score (60 s), crossfaded |
 
 One-shots are mono and peak-normalized so the per-sound gains in `sounds.ts`
-set the balance; the two loops stay stereo and sit well below them. Only the
-stone-in-water impact is still synthesized — no generated sample covers it.
+set the balance; the two loops stay stereo and sit well below them.
+
+**Still synthesized on purpose.** The call (`pulse`) and the footsteps on stone
+and in water sounded better procedural in play-testing, so no sample ships for
+them. The call especially benefits: each echo tap is re-rendered at its own
+delay and charge instead of replaying one fixed recording. A stone landing in
+water is synthesized too, since no generated sample covers it.
 
 The heartbeat, the room echo taps, the cave reverb and all spatialization
 remain procedural.

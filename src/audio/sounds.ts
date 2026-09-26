@@ -33,28 +33,23 @@ export class Sfx {
     private readonly bank: SampleBank,
   ) {}
 
-  /** The creature's echolocation call, followed by room echoes. */
+  /**
+   * The creature's echolocation call, followed by room echoes.
+   *
+   * Deliberately synthesized: play-testing preferred the generated call, and
+   * the synthesized chirp also lets every echo tap be re-rendered at its own
+   * delay and charge rather than replaying one fixed recording.
+   */
   pulse(charge: number, taps: readonly EchoTap[]): void {
     const c = this.core;
     const v = c.direct(0.9, 0.25);
     if (!v) return;
     const t = v.t;
-    const id = charge > 0.35 ? "call-long" : "call-short";
-    // One rate for the whole call so the echoes match the direct sound.
-    const rate = wobble() * (charge > 0.35 ? 1 : 1.05 - charge * 0.1);
-    const sampled = this.bank.play(v.input, id, t, { rate });
-
-    if (sampled) {
-      // A charged call keeps its synthesized low body: the sample alone does
-      // not carry the sub-bass thump that sells a loud call.
-      if (charge > 0.35) c.tone(v.input, t, { f0: 90, f1: 42, glide: 0.5, decay: 0.7, gain: 0.22 * charge });
-    } else {
-      this.synthChirp(v.input, t, charge, 1);
-      c.tone(v.input, t, { f0: 1760, f1: 1700, decay: 0.9 + charge, gain: 0.05 + charge * 0.05, attack: 0.02 });
-      if (charge > 0.35) {
-        c.tone(v.input, t, { f0: 90, f1: 42, glide: 0.5, decay: 0.7, gain: 0.35 * charge });
-        c.burst(v.input, t, { freq: 300, freq1: 2400, q: 0.9, attack: 0.02, decay: 0.45, gain: 0.18 * charge });
-      }
+    this.synthChirp(v.input, t, charge, 1);
+    c.tone(v.input, t, { f0: 1760, f1: 1700, decay: 0.9 + charge, gain: 0.05 + charge * 0.05, attack: 0.02 });
+    if (charge > 0.35) {
+      c.tone(v.input, t, { f0: 90, f1: 42, glide: 0.5, decay: 0.7, gain: 0.35 * charge });
+      c.burst(v.input, t, { freq: 300, freq1: 2400, q: 0.9, attack: 0.02, decay: 0.45, gain: 0.18 * charge });
     }
 
     const ctx = c.ctx!;
@@ -70,8 +65,7 @@ export class Sfx {
       const send = ctx.createGain();
       send.gain.value = 0.35;
       pan.connect(send).connect(c.reverbIn);
-      if (sampled) this.bank.play(out, id, t, { when: t + tap.delay, rate, gain: 0.8 });
-      else this.synthChirp(out, t + tap.delay, charge, 0.8);
+      this.synthChirp(out, t + tap.delay, charge, 0.8);
     }
   }
 
@@ -88,12 +82,12 @@ export class Sfx {
     });
   }
 
+  /** Deliberately synthesized: play-testing preferred it over the samples. */
   footstep(x: number, y: number, water: boolean, sneak: boolean): void {
     const c = this.core;
     const v = c.spatial(x, y, sneak ? 0.35 : 1, 0.2);
     if (!v) return;
     const t = v.t + Math.random() * 0.01;
-    if (this.bank.play(v.input, water ? "step-water" : "step-stone", t, { gain: sneak ? 0.5 : 1 })) return;
     if (water) {
       c.burst(v.input, t, { freq: 700, freq1: 2600, q: 1.2, decay: 0.16, gain: 0.26 });
       for (let i = 0; i < 3; i++) {

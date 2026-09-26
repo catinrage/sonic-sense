@@ -9,16 +9,16 @@
  *
  * Sounds with several variants are picked between at random so repeats do not
  * sound identical.
+ *
+ * The call and the footsteps are absent on purpose: play-testing preferred the
+ * synthesized recipes for those, so `Sfx` renders them directly and no sample
+ * is shipped. See `pulse()` and `footstep()` in sounds.ts.
  */
 export const AUDIO_BASE = "/assets/audio";
 /** Lists which samples are actually deployed, so nothing absent is requested. */
 export const MANIFEST_FILE = "index.json";
 
 export const SAMPLES = {
-  "call-short": ["call-short-1.mp3", "call-short-2.mp3"],
-  "call-long": ["call-long.mp3"],
-  "step-stone": ["step-stone-1.mp3", "step-stone-2.mp3", "step-stone-3.mp3"],
-  "step-water": ["step-water-1.mp3", "step-water-2.mp3", "step-water-3.mp3"],
   "stone-throw": ["stone-throw.mp3"],
   "stone-hit": ["stone-hit-1.mp3", "stone-hit-2.mp3"],
   crystal: ["crystal.mp3"],
