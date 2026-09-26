@@ -303,6 +303,8 @@ export class World {
     const exit = this.exit;
     if (exit && exit.active && !this.completed && dist(p.x, p.y, exit.x, exit.y) < 0.42) {
       this.completed = true;
+      // The Gate has taken the creature: nothing that is still hunting can reach it now.
+      p.invulnerable = true;
       this.events.emit("complete", { x: exit.x, y: exit.y });
     }
   }

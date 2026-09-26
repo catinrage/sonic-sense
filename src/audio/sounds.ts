@@ -422,11 +422,11 @@ export class Sfx {
     c.tone(v.input, v.t, { type: "triangle", f0: 110, decay: 3, gain: 0.15, attack: 0.3 });
   }
 
+  /** Deliberately synthesized: play-testing preferred this soft tick over the generated sample. */
   uiMove(): void {
     const c = this.core;
     const v = c.direct(0.4, 0.2);
     if (!v) return;
-    if (this.bank.play(v.input, "ui-move", v.t, { rate: wobble(0.03) })) return;
     c.tone(v.input, v.t, { f0: 1900, decay: 0.04, gain: 0.05 });
   }
 

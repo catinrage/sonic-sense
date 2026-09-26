@@ -215,3 +215,16 @@ describe("wave layers", () => {
     expect(sang).toBe(true);
   });
 });
+
+describe("reaching the Gate", () => {
+  test("nothing can kill the creature once the Gate has taken it", () => {
+    const world = worldOf(["#########", "#.@X....#", "#.....W.#", "#########"]);
+    run(world, 1, { moveX: 1 });
+    expect(world.completed).toBe(true);
+    const hunter = world.wardens[0]!;
+    hunter.x = world.player.x;
+    hunter.y = world.player.y;
+    run(world, 0.5);
+    expect(world.player.dying).toBeNull();
+  });
+});

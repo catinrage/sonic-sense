@@ -145,7 +145,7 @@ client reads that manifest first, so nothing absent is ever requested.
 
 Everything in `src/assets/audio/` was generated with **ElevenLabs** — sound
 effects with `eleven_text_to_sound_v2`, and the title score with
-`eleven_music_v2`. 25 files, 1.7 MB.
+`eleven_music_v2`. 24 files.
 
 | Sound | Files | Used for |
 | --- | --- | --- |
@@ -156,7 +156,7 @@ effects with `eleven_text_to_sound_v2`, and the title score with
 | `shard`, `gate-hum`, `gate-awake` | 1 + 1 + 1 | Echo Shards and the Gate |
 | `drip` | 2 | Cave drips |
 | `death-pit`, `death-warden`, `complete` | 1 + 1 + 1 | Endings |
-| `ui-move`, `ui-select` | 1 + 1 | Menus |
+| `ui-select` | 1 | Menu selection |
 | `ambience-loop`, `title-loop` | 1 + 1 | Cave bed (30 s) and title score (60 s), crossfaded |
 
 One-shots are mono and peak-normalized so the per-sound gains in `sounds.ts`
@@ -166,9 +166,9 @@ The Act II sounds — sentinel calls, tremor footfalls, wind chimes, the focused
 call, Muffle, lure chirps, soft steps on silt and the wind bed that swells in
 drafts — are synthesized; no samples exist for them yet.
 
-**Still synthesized on purpose.** The call (`pulse`) and the footsteps on stone
-and in water sounded better procedural in play-testing, so no sample ships for
-them. The call especially benefits: each echo tap is re-rendered at its own
+**Still synthesized on purpose.** The call (`pulse`), the footsteps on stone
+and in water, and the menu hover tick sounded better procedural in play-testing,
+so no sample ships for them. The call especially benefits: each echo tap is re-rendered at its own
 delay and charge instead of replaying one fixed recording. A stone landing in
 water is synthesized too, since no generated sample covers it.
 

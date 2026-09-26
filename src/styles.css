@@ -319,6 +319,11 @@ kbd {
 
 /* ---------------------------------------------------------------- panels */
 
+/* A menu panel another one was opened from: kept, but out of sight until it is the top again. */
+#ui .screen.is-covered {
+  visibility: hidden;
+}
+
 .screen--panel {
   position: absolute;
   inset: 0;

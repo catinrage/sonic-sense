@@ -47,7 +47,8 @@ export interface SettingsState {
   gentle: boolean;
 }
 
-type Panel = "title" | "chapters" | "settings" | "pause" | "ending" | "ability";
+const PANELS = ["title", "chapters", "settings", "pause", "ending", "ability"] as const;
+type Panel = (typeof PANELS)[number];
 
 /** Line-art glyph for each ability, drawn in the current text colour. */
 const ABILITY_GLYPHS: Readonly<Record<Ability, string>> = {
@@ -365,6 +366,7 @@ export class UI {
   }
 
   update(dt: number): void {
+    this.syncCovered();
     if (this.hintTimer > 0) {
       this.hintTimer -= dt;
       if (this.hintTimer <= 0.5 && this.hintTimer + dt > 0.5) this.bind("hud-hint").classList.remove("is-visible");
@@ -391,10 +393,18 @@ export class UI {
     this.hintTimer = next.duration;
   }
 
+  /** Only the top menu panel shows; the ones it was opened from wait, hidden, beneath it. */
+  private syncCovered(): void {
+    const top = this.topPanel;
+    for (const p of PANELS) this.el[p]!.classList.toggle("is-covered", p !== top && this.panelStack.includes(p));
+  }
+
   private openPanel(panel: Panel): void {
     const node = this.el[panel]!;
     node.hidden = false;
     if (this.topPanel !== panel) this.panelStack.push(panel);
+    // Stack by depth, not page order: Sound & Sight opened from the pause menu must sit above it.
+    node.style.zIndex = String(this.panelStack.indexOf(panel) + 1);
     this.focusFirst(node);
   }
 

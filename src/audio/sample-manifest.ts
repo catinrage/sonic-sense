@@ -10,9 +10,10 @@
  * Sounds with several variants are picked between at random so repeats do not
  * sound identical.
  *
- * The call and the footsteps are absent on purpose: play-testing preferred the
- * synthesized recipes for those, so `Sfx` renders them directly and no sample
- * is shipped. See `pulse()` and `footstep()` in sounds.ts.
+ * The call, the footsteps and the menu hover tick are absent on purpose:
+ * play-testing preferred the synthesized recipes for those, so `Sfx` renders
+ * them directly and no sample is shipped. See `pulse()`, `footstep()` and
+ * `uiMove()` in sounds.ts.
  */
 export const AUDIO_BASE = "/assets/audio";
 /** Lists which samples are actually deployed, so nothing absent is requested. */
@@ -36,7 +37,6 @@ export const SAMPLES = {
   "death-pit": ["death-pit.mp3"],
   "death-warden": ["death-warden.mp3"],
   complete: ["complete.mp3"],
-  "ui-move": ["ui-move.mp3"],
   "ui-select": ["ui-select.mp3"],
   "ambience-loop": ["ambience-loop.mp3"],
   "title-loop": ["title-loop.mp3"],
