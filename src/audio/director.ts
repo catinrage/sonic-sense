@@ -4,12 +4,21 @@ import { Ambience, type AmbienceScene } from "./ambience";
 import { AudioCore } from "./engine";
 import { SampleBank } from "./samples";
 import { Sfx, type EchoTap } from "./sounds";
+import { InstrumentSfx } from "./sounds-instrument";
 import { WindBed } from "./wind";
 import { TILE } from "../game/level-types";
 
 const ECHO_RAYS = 20;
 /** Each hunter cries in its own register: the pack shrill, the sentinel low. */
-const CRY_PITCH: Readonly<Record<CreatureKind, number>> = { warden: 1, chorus: 1.35, stalker: 0.82, sentinel: 0.7, tremor: 0.6 };
+const CRY_PITCH: Readonly<Record<CreatureKind, number>> = {
+  warden: 1,
+  chorus: 1.35,
+  stalker: 0.82,
+  sentinel: 0.7,
+  tremor: 0.6,
+  metronome: 1.12,
+  conductor: 0.5,
+};
 const MAX_TAPS = 7;
 
 /** Distance along a ray until it hits a sound-blocking tile (or maxDist). */
@@ -75,6 +84,7 @@ export class AudioDirector {
   readonly core = new AudioCore();
   readonly samples = new SampleBank(this.core);
   readonly sfx = new Sfx(this.core, this.samples);
+  readonly instrument = new InstrumentSfx(this.core, this.samples);
   readonly ambience = new Ambience(this.core, this.samples);
   readonly wind = new WindBed(this.core);
   private unsubscribe: (() => void)[] = [];
@@ -96,15 +106,30 @@ export class AudioDirector {
     this.world = world;
     const ev = world.events;
     const s = this.sfx;
+    const ins = this.instrument;
     this.unsubscribe.push(
-      ev.on("pulse", (e) => (e.aim ? s.focus(e.charge) : s.pulse(e.charge, echoTaps(world, e.x, e.y, 6 + e.charge * 8)))),
+      ev.on("pulse", (e) => {
+        if (e.aim) s.focus(e.charge);
+        else s.pulse(e.charge, echoTaps(world, e.x, e.y, 6 + e.charge * 8));
+        if (e.note !== null) ins.keyedCall(e.note, e.charge);
+      }),
+      ev.on("glassRing", (e) => ins.glassRing(e.x, e.y, e.note)),
+      ev.on("glassClink", (e) => ins.glassClink(e.x, e.y)),
+      ev.on("glassShatter", (e) => ins.glassShatter(e.x, e.y, e.notes)),
+      ev.on("discord", (e) => ins.discord(e.x, e.y)),
+      ev.on("mimic", (e) => ins.mimic(e.x, e.y, e.note)),
+      ev.on("tube", (e) => ins.tube(e.x, e.y, e.note)),
+      ev.on("dishTurn", (e) => ins.dishTurn(e.x, e.y)),
+      ev.on("sluice", (e) => ins.sluice(e.x, e.y, e.flooded)),
+      ev.on("metronomeTick", (e) => ins.metronomeTick(e.x, e.y)),
+      ev.on("metronomePulse", (e) => ins.metronomePulse(e.x, e.y)),
       ev.on("muffle", (e) => s.muffle(e.on)),
       ev.on("listen", () => s.listen()),
       ev.on("lure", (e) => s.lure(e.x, e.y, e.left)),
       ev.on("step", (e) => s.footstep(e.x, e.y, e.water, e.sneak, e.silt)),
       ev.on("throw", (e) => s.whoosh(e.x, e.y)),
       ev.on("stoneHit", (e) => s.stoneHit(e.x, e.y, e.strength, e.water)),
-      ev.on("crystal", (e) => s.crystal(e.x, e.y, e.pitch)),
+      ev.on("crystal", (e) => s.crystal(e.x, e.y, e.note)),
       ev.on("bell", (e) => s.bell(e.x, e.y, e.group)),
       ev.on("door", (e) => s.door(e.x, e.y, e.open)),
       ev.on("tick", (e) => s.tick(e.x, e.y, e.left < 3)),

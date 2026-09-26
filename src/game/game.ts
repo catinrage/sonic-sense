@@ -24,6 +24,7 @@ export class Stage {
   private textures: LevelTextures | null = null;
   private seenSolidity = -1;
   private seenTiles = -1;
+  private seenTerrain = -1;
   readonly post: PostParams = {
     exposure: 1.0,
     bloom: 0.45,
@@ -63,6 +64,7 @@ export class Stage {
     this.renderer.setDust(world.dustMotes());
     this.seenSolidity = world.solidityVersion;
     this.seenTiles = world.tilesVersion;
+    this.seenTerrain = world.terrainVersion;
     this.camera.snap(world.player.x + this.cameraOffset.x, world.player.y + this.cameraOffset.y);
     this.camera.zoomTarget = BASE_VIEW_HEIGHT;
     this.camera.viewHeight = BASE_VIEW_HEIGHT;
@@ -111,6 +113,10 @@ export class Stage {
     const f = this.post.flash;
     f[3] = Math.max(0, f[3] - dt * this.flashDecay);
 
+    if (world.terrainVersion !== this.seenTerrain) {
+      this.seenTerrain = world.terrainVersion;
+      this.textures?.markTerrainDirty();
+    }
     if (world.solidityVersion !== this.seenSolidity) {
       this.seenSolidity = world.solidityVersion;
       this.textures?.markSolidityDirty();

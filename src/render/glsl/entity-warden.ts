@@ -7,9 +7,11 @@ import { ENTITY_PRELUDE } from "./entity-common";
  *   2 Sentinel — bone-white, crown permanently flared, pale glow
  *   3 Stalker  — near-black with violet membranes
  *   4 Tremor   — deaf: no membranes, a broad armoured dome and ground-feeling whiskers
+ *   5 Metronome — brass-banded, no membranes: a pendulum crest that swings to its beat
+ *   6 Conductor — tall and pale, a cloak of membranes and a long baton of bone
  *
  * uP[0]: frill (0 folded .. 1 flared), alert, time, moving
- * uP[1]: mandible open, variant, scale
+ * uP[1]: mandible open, variant, scale, beat clock (beats kept, with the fraction of the next)
  * uExtra[2i] = (hip.xy, knee.xy), uExtra[2i+1] = (foot.xy, lift, 0) for 6 legs
  */
 export const WARDEN_FS = /* glsl */ `${ENTITY_PRELUDE}
@@ -34,9 +36,15 @@ void choosePalette(float variant) {
   } else if (variant < 3.5) {
     CHITIN = vec3(0.12, 0.1, 0.15); BONE = vec3(0.36, 0.3, 0.42); CREVICE = vec3(0.07, 0.02, 0.12);
     GLOW = vec3(0.62, 0.22, 1.0); MEM_DARK = vec3(0.06, 0.02, 0.1); MEM_LIGHT = vec3(0.15, 0.05, 0.24);
-  } else {
+  } else if (variant < 4.5) {
     CHITIN = vec3(0.36, 0.23, 0.12); BONE = vec3(0.64, 0.52, 0.34); CREVICE = vec3(0.14, 0.07, 0.02);
     GLOW = vec3(0.9, 0.55, 0.22); MEM_DARK = vec3(0.0); MEM_LIGHT = vec3(0.0);
+  } else if (variant < 5.5) {
+    CHITIN = vec3(0.3, 0.25, 0.15); BONE = vec3(0.82, 0.7, 0.44); CREVICE = vec3(0.12, 0.08, 0.02);
+    GLOW = vec3(1.0, 0.78, 0.35); MEM_DARK = vec3(0.0); MEM_LIGHT = vec3(0.0);
+  } else {
+    CHITIN = vec3(0.14, 0.13, 0.2); BONE = vec3(0.86, 0.84, 0.92); CREVICE = vec3(0.05, 0.04, 0.1);
+    GLOW = vec3(0.95, 0.35, 0.75); MEM_DARK = vec3(0.08, 0.03, 0.1); MEM_LIGHT = vec3(0.24, 0.09, 0.28);
   }
 }
 
@@ -124,10 +132,40 @@ void drawWhiskers(inout Surf s, vec2 p, float time, float alertGlow, float px) {
   }
 }
 
+/** Metronome: a weighted pendulum rising from its back, swinging from side to side on the beat. */
+void drawPendulum(inout Surf s, vec2 p, float beat, float alertGlow, float px) {
+  float swing = 0.6 * cos(PI * beat);
+  vec2 pivot = vec2(-0.3, 0.0);
+  vec2 dir = vec2(-cos(swing), sin(swing));
+  vec2 tip = pivot + dir * 0.55;
+  vec4 rod = capsule(p, pivot, tip, 0.022, 0.014);
+  over(s, BONE * 0.9, tubeNormal(p, rod.zw, 0.02), vec3(0.0), 1.2, 70.0, cover(rod.x, px));
+  float strike = pow(abs(cos(PI * beat)), 12.0);
+  float bob = length(p - (pivot + dir * 0.4)) - 0.07;
+  over(s, BONE, normalize(vec3((p - (pivot + dir * 0.4)) * 8.0, 1.0)), GLOW * (0.15 + strike * 0.9 + alertGlow * 0.4), 1.4, 80.0, cover(bob, px));
+  gHalo += GLOW * exp(-length(p - (pivot + dir * 0.4)) * 14.0) * strike * 0.5;
+  float pin = length(p - pivot) - 0.04;
+  over(s, CREVICE, vec3(0.0, 0.0, 1.0), GLOW * 0.3, 0.6, 30.0, cover(pin, px));
+}
+
+/** Conductor: a long baton of bone held forward, its tip glowing with the last discord it heard. */
+void drawBaton(inout Surf s, vec2 p, float time, float alertGlow, float px) {
+  float sway = sin(time * 1.3) * 0.12;
+  vec2 a = vec2(0.3, -0.1);
+  vec2 b = vec2(0.95, -0.28 + sway);
+  vec4 baton = capsule(p, a, b, 0.018, 0.006);
+  over(s, BONE, tubeNormal(p, baton.zw, 0.016), GLOW * alertGlow * 0.3 * baton.y, 1.2, 70.0, cover(baton.x, px));
+  float tipD = length(p - b) - 0.025;
+  over(s, BONE, vec3(0.0, 0.0, 1.0), GLOW * (0.25 + alertGlow), 0.8, 40.0, cover(tipD, px));
+  gHalo += GLOW * exp(-length(p - b) * 30.0) * (0.2 + alertGlow) * 0.5;
+}
+
 void main() {
   float variant = uP[1].y;
   choosePalette(variant);
-  bool tremor = variant > 3.5;
+  bool tremor = variant > 3.5 && variant < 4.5;
+  bool metronome = variant > 4.5 && variant < 5.5;
+  bool conductor = variant > 5.5;
   bool sentinel = variant > 1.5 && variant < 2.5;
   SCALE = 1.1 * max(uP[1].z, 0.5);
   vec2 p = vLocal / SCALE;
@@ -178,9 +216,13 @@ void main() {
 
   if (tremor) {
     drawWhiskers(s, p, time, alertGlow, px);
+  } else if (metronome) {
+    drawPendulum(s, p, uP[1].w, alertGlow, px);
   } else {
-    drawMembrane(s, p, -1.0, frill, alertGlow, time, px);
-    drawMembrane(s, p, 1.0, frill, alertGlow, time, px);
+    float cloak = conductor ? 0.35 + frill * 0.65 : frill;
+    drawMembrane(s, p, -1.0, cloak, alertGlow, time, px);
+    drawMembrane(s, p, 1.0, cloak, alertGlow, time, px);
+    if (conductor) drawBaton(s, p, time, alertGlow, px);
   }
 
   // Mandibles.

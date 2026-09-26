@@ -1,8 +1,8 @@
 import { clamp, damp, type Vec2 } from "../../core/math";
-import { CRYSTAL_SONG, CRYSTAL_TRIGGER, RESONATOR_SONG } from "../calls";
+import { BELL_SONG, CRYSTAL_DELAY, CRYSTAL_SONG, CRYSTAL_TRIGGER, DISH_TURN_TRIGGER, RESONATOR_SONG } from "../calls";
 import { fxRng, hash2, Rng, seedFor } from "../../core/rng";
 import type { FieldSample } from "../geodesic";
-import { COLORS } from "../palette";
+import { COLORS, noteColor } from "../palette";
 import type { Wave } from "../waves";
 import type { World } from "../world";
 
@@ -18,36 +18,109 @@ const GRAVITY = 22;
 export const LURE_CHIRPS = 10;
 const LURE_PERIOD = 1.1;
 
-/** Resonance crystal: re-emits a violet wave when struck by sound. Loud — creatures hear it. */
+export interface CrystalTuning {
+  /** The note it sings; null for a white crystal. */
+  note: number | null;
+  /** Wakes to any sound, but sings its own note. */
+  prism: boolean;
+  /** A dish a focused call turns a quarter step. */
+  turnable: boolean;
+}
+
+/** How many recent root sounds a relay remembers having answered. */
+const ANSWERED_MEMORY = 16;
+
+/**
+ * Keeps the root sounds a relay has answered, so it answers each at most once
+ * (once per tone, for relays that pass the tone on): echoes cannot feed back.
+ */
+export class OriginMemory {
+  private readonly seen: number[] = [];
+
+  has(origin: number, note: number | null = null): boolean {
+    return this.seen.includes(memoryKey(origin, note));
+  }
+
+  add(origin: number, note: number | null = null): void {
+    this.seen.push(memoryKey(origin, note));
+    if (this.seen.length > ANSWERED_MEMORY) this.seen.shift();
+  }
+}
+
+const memoryKey = (origin: number, note: number | null): number => origin * 8 + (note ?? 7);
+
+/**
+ * Resonance crystal: re-emits a wave when struck by sound. Loud — creatures hear it.
+ * White crystals answer anything; tuned crystals only their own note; prisms
+ * answer anything but sing their note.
+ */
 export class Crystal implements Listener {
   glow = 0;
   cooldown = 0;
   pending = -1;
   readonly seed: number;
-  readonly pitch: number;
   shake = 0;
+  readonly note: number | null;
+  readonly prism: boolean;
+  readonly turnable: boolean;
+  /** A resonator's beam direction: its dish sends the song one way only. */
+  beam: Vec2 | null;
+  /** Seconds since the dish last turned (animation). */
+  turned = 99;
+  private readonly answered = new OriginMemory();
+  private pendingOrigin = 0;
 
   constructor(
     readonly x: number,
     readonly y: number,
-    /** A resonator's beam direction: its dish sends the song one way only. */
-    readonly beam: Vec2 | null = null,
+    beam: Vec2 | null = null,
+    tuning: Partial<CrystalTuning> = {},
   ) {
+    this.beam = beam;
+    this.note = tuning.note ?? null;
+    this.prism = tuning.prism ?? false;
+    this.turnable = (tuning.turnable ?? false) && beam !== null;
     this.seed = hash2(Math.floor(x), Math.floor(y), 71);
-    this.pitch = Math.floor(this.seed * 5);
   }
 
-  hear(wave: Wave, sample: FieldSample): void {
-    if (wave.source === this || this.cooldown > 0 || this.pending >= 0) return;
-    if (wave.energyAt(sample) < CRYSTAL_TRIGGER) return;
-    this.pending = 0.18;
+  /** Whether a sound of this note can wake it. */
+  accepts(note: number | null): boolean {
+    return this.note === null || this.prism || note === this.note;
+  }
+
+  hear(wave: Wave, sample: FieldSample, world: World): void {
+    // Creatures' own senses — echolocation clicks, a tremor's tread — never set a crystal singing.
+    if (wave.source === this || wave.kind === "warden" || wave.kind === "tremor") return;
+    const e = wave.energyAt(sample);
+    // A focused call turns a dish instead of waking it.
+    if (this.turnable && wave.own && wave.cone) {
+      if (e >= DISH_TURN_TRIGGER) this.turn(world);
+      return;
+    }
+    if (this.cooldown > 0 || this.pending >= 0 || this.answered.has(wave.origin)) return;
+    if (!this.accepts(wave.note) || e < CRYSTAL_TRIGGER) return;
+    this.answered.add(wave.origin);
+    this.pendingOrigin = wave.origin;
+    this.pending = CRYSTAL_DELAY;
     this.shake = 1;
+  }
+
+  /** A quarter turn clockwise, with a soft grind hunters nearby can hear. */
+  private turn(world: World): void {
+    const b = this.beam;
+    if (!b) return;
+    // `|| 0` keeps the axes free of negative zeros.
+    this.beam = { x: -b.y || 0, y: b.x || 0 };
+    this.turned = 0;
+    world.emitSound({ kind: "door", x: this.x, y: this.y, radius: 1.6, loudness: 3, strength: 0.4, speed: 5, fade: 0.9, color: COLORS.door, source: this, alerts: true });
+    world.events.emit("dishTurn", { x: this.x, y: this.y });
   }
 
   update(dt: number, world: World): void {
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.glow = Math.max(0, this.glow - dt * 0.45);
     this.shake = Math.max(0, this.shake - dt * 2.5);
+    this.turned += dt;
     if (this.pending < 0) return;
     this.pending -= dt;
     this.glow = Math.max(this.glow, 0.35);
@@ -64,16 +137,18 @@ export class Crystal implements Listener {
       radius: song.radius,
       loudness: song.loudness,
       strength: song.strength,
-      speed: beam ? 10 : 8,
+      speed: song.speed,
       fade: 3.2,
-      color: COLORS.crystal,
+      color: noteColor(this.note, COLORS.crystal),
       source: this,
       alerts: true,
       hits: true,
       glow: 0.62,
       cone: beam ? { x: beam.x, y: beam.y, halfAngle: RESONATOR_SONG.halfAngle } : undefined,
+      note: this.note,
+      origin: this.pendingOrigin,
     });
-    world.events.emit("crystal", { x: this.x, y: this.y, pitch: this.pitch, beam });
+    world.events.emit("crystal", { x: this.x, y: this.y, note: this.note, beam });
   }
 }
 
@@ -83,6 +158,8 @@ export class Bell implements Listener {
   wobble = 0;
   timer = 0;
   cooldown = 0;
+  /** A bell rings once per root sound, so an echo of its own ring cannot ring it again. */
+  private readonly answered = new OriginMemory();
 
   constructor(
     readonly x: number,
@@ -90,19 +167,22 @@ export class Bell implements Listener {
     readonly group: number,
     readonly timed: number,
     readonly threshold: number,
+    /** A sluice bell: each ring floods or drains its group's basins. */
+    readonly toggle = false,
   ) {}
 
   hear(wave: Wave, sample: FieldSample, world: World): void {
-    if (wave.source === this || this.cooldown > 0) return;
+    if (wave.source === this || this.cooldown > 0 || this.answered.has(wave.origin)) return;
     const e = wave.energyAt(sample);
     if (e < this.threshold) {
       if (e > 0.05) this.wobble = Math.max(this.wobble, e * 0.8);
       return;
     }
-    this.strike(world);
+    this.answered.add(wave.origin);
+    this.strike(world, wave.origin);
   }
 
-  strike(world: World): void {
+  strike(world: World, origin?: number): void {
     this.ring = 1;
     this.wobble = 1;
     this.cooldown = 0.6;
@@ -111,16 +191,18 @@ export class Bell implements Listener {
       kind: "bell",
       x: this.x,
       y: this.y,
-      radius: 5,
-      loudness: 5,
-      strength: 0.85,
-      speed: 7,
+      radius: BELL_SONG.radius,
+      loudness: BELL_SONG.loudness,
+      strength: BELL_SONG.strength,
+      speed: BELL_SONG.speed,
       fade: 2.6,
       color: COLORS.bell,
       source: this,
       alerts: true,
+      origin,
     });
-    world.setGroupOpen(this.group, true, this);
+    if (this.toggle) world.toggleBasins(this.group);
+    else world.setGroupOpen(this.group, true, this);
     world.events.emit("bell", { x: this.x, y: this.y, group: this.group });
   }
 

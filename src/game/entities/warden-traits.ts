@@ -3,7 +3,7 @@
  * of these trait sets, so new creatures are mostly configuration.
  */
 
-export type CreatureKind = "warden" | "chorus" | "stalker" | "sentinel" | "tremor";
+export type CreatureKind = "warden" | "chorus" | "stalker" | "sentinel" | "tremor" | "metronome" | "conductor";
 
 export interface WardenTraits {
   kind: CreatureKind;
@@ -41,6 +41,13 @@ export interface WardenTraits {
   pulseRadius: number;
   /** Searches by walking circles around the spot instead of standing still. */
   prowls: boolean;
+  /**
+   * Seconds between the pulses of a creature that keeps a strict beat (0 = none).
+   * It hears nothing: it sees whatever is moving when its pulse passes.
+   */
+  beat: number;
+  /** Hears every discord struck anywhere, however far. */
+  hearsDiscord: boolean;
 }
 
 export const DEFAULT_TRAITS: Readonly<WardenTraits> = {
@@ -64,6 +71,8 @@ export const DEFAULT_TRAITS: Readonly<WardenTraits> = {
   pulsePeriod: 0,
   pulseRadius: 0,
   prowls: false,
+  beat: 0,
+  hearsDiscord: false,
 };
 
 const CREATURES: Record<CreatureKind, Partial<WardenTraits>> = {
@@ -95,6 +104,31 @@ const CREATURES: Record<CreatureKind, Partial<WardenTraits>> = {
   },
   /** Deaf to the air. Feels footsteps and falling stones through the ground. */
   tremor: { variant: 4, scale: 1.05, hearsAir: false, feelsSteps: 5, huntSpeed: 3.3, patrolSpeed: 1.05, searchTime: 3.6 },
+  /** Keeps a strict beat. Deaf, but its pulse sees anything moving as it passes. */
+  metronome: {
+    variant: 5,
+    scale: 1.15,
+    hearsAir: false,
+    beat: 3,
+    pulseRadius: 9,
+    huntSpeed: 3.1,
+    patrolSpeed: 1,
+    searchTime: 2.6,
+    giveUpAfter: 9,
+    alertTime: 0.3,
+  },
+  /** The Instrument's keeper: slow, relentless, and it hears every discord. */
+  conductor: {
+    variant: 6,
+    scale: 1.3,
+    huntSpeed: 2.45,
+    patrolSpeed: 0.95,
+    giveUpAfter: Infinity,
+    searchTime: 7,
+    prowls: true,
+    alertTime: 0.8,
+    hearsDiscord: true,
+  },
 };
 
 /** Traits for a creature kind, with optional per-spawn overrides. */

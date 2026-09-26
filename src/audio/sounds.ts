@@ -171,11 +171,19 @@ export class Sfx {
     c.tone(v.input, t, { type: "triangle", f0: 260, f1: 170, decay: 0.09, gain: 0.25 * strength });
   }
 
-  crystal(x: number, y: number, pitch: number): void {
+  /** A crystal's song: a tuned crystal sings its note; a white one a bright, unpitched shimmer. */
+  crystal(x: number, y: number, note: number | null): void {
     const c = this.core;
     const v = c.spatial(x, y, 1.1, 0.8);
     if (!v) return;
-    const base = CRYSTAL_NOTES[pitch % CRYSTAL_NOTES.length]!;
+    if (note === null) {
+      // Two detuned voices a sixth apart: no single note to mistake for a key.
+      if (this.bank.play(v.input, "crystal", v.t, { rate: 1.19 * wobble(0.01), gain: 0.6 })) {
+        this.bank.play(v.input, "crystal", v.t + 0.02, { rate: 0.71 * wobble(0.01), gain: 0.45 });
+        return;
+      }
+    }
+    const base = CRYSTAL_NOTES[(note ?? 0) % CRYSTAL_NOTES.length]!;
     // Retune the one recorded crystal to the note this crystal sings.
     if (this.bank.play(v.input, "crystal", v.t, { rate: (base / CRYSTAL_NOTES[0]!) * wobble(0.01) })) return;
     const partials = [1, 2.32, 4.25, 6.63];

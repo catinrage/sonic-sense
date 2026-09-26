@@ -1,5 +1,4 @@
-import type { AbilityInfo, AbilityView } from "../game/abilities";
-import type { Ability } from "../game/level-types";
+import type { AbilityView } from "../game/abilities";
 
 export type VolumeBus = "master" | "sfx" | "music";
 export type SettingKey = "shake" | "gentle";
@@ -16,7 +15,7 @@ export interface UIHandlers {
   onTitle(): void;
   /** Continue past an act's interlude into the next chapter. */
   onDescend(): void;
-  /** The player has read a new ability's lesson. */
+  /** The player has read a lesson screen. */
   onLearned(): void;
   onVolume(bus: VolumeBus, value: number): void;
   onSetting(key: SettingKey, value: boolean): void;
@@ -41,6 +40,27 @@ export interface EndingContent {
   interlude: boolean;
 }
 
+/** A lesson screen: a new ability, or a device or creature of the Instrument. */
+export interface LessonView {
+  eyebrow: string;
+  /** Inner SVG markup of its 64×64 glyph. */
+  glyph: string;
+  title: string;
+  /** What to do. [Key] tokens render as keycaps. */
+  use: string;
+  does: string;
+  tip: string;
+}
+
+/** A row of the pause menu's list of what the chapter is played with. */
+export interface KitRow {
+  name: string;
+  /** Key that uses it, or "" to show `tag` instead. */
+  key: string;
+  tag: string;
+  blurb: string;
+}
+
 export interface SettingsState {
   volumes: Record<VolumeBus, number>;
   shake: boolean;
@@ -50,13 +70,7 @@ export interface SettingsState {
 const PANELS = ["title", "chapters", "settings", "pause", "ending", "ability"] as const;
 type Panel = (typeof PANELS)[number];
 
-/** Line-art glyph for each ability, drawn in the current text colour. */
-const ABILITY_GLYPHS: Readonly<Record<Ability, string>> = {
-  deepListen: `<circle cx="32" cy="32" r="3.5" fill="currentColor"/><path d="M45 19a18 18 0 0 1 0 26M51 13a26 26 0 0 1 0 38M19 19a18 18 0 0 0 0 26M13 13a26 26 0 0 0 0 38" opacity=".55"/><path d="M40 25l4-4M40 39l4 4M24 25l-4-4M24 39l-4 4"/>`,
-  focus: `<circle cx="12" cy="32" r="3.5" fill="currentColor"/><path d="M16 30l38-11M16 34l38 11"/><path d="M34 26a14 14 0 0 1 0 12M46 22a22 22 0 0 1 0 20" opacity=".55"/>`,
-  lureStone: `<ellipse cx="32" cy="44" rx="11" ry="7" fill="currentColor" opacity=".35"/><ellipse cx="32" cy="44" rx="11" ry="7"/><path d="M26 30a9 9 0 0 1 12 0M21 24a16 16 0 0 1 22 0M16 18a23 23 0 0 1 32 0" opacity=".6"/>`,
-  muffle: `<ellipse cx="32" cy="40" rx="8" ry="7" fill="currentColor" opacity=".35"/><circle cx="22" cy="28" r="3.5"/><circle cx="32" cy="24" r="3.5"/><circle cx="42" cy="28" r="3.5"/><path d="M12 52L52 12"/>`,
-};
+
 
 const escapeHtml = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -176,27 +190,28 @@ export class UI {
   }
 
   /** Pause, listing the abilities this chapter is played with so they can be re-read. */
-  showPause(kit: readonly AbilityInfo[] = []): void {
+  showPause(kit: readonly KitRow[] = []): void {
     const box = this.bind("pause-kit");
     box.hidden = kit.length === 0;
     box.replaceChildren(
       ...kit.map((a) => {
         const row = document.createElement("div");
         row.className = "kit-row";
-        row.innerHTML = `<p class="kit-name">${a.key ? `<kbd>${escapeHtml(a.key)}</kbd>` : `<span class="ability-trigger">${escapeHtml(a.trigger)}</span>`}${escapeHtml(a.name)}</p><p class="kit-blurb">${escapeHtml(a.blurb)}</p>`;
+        row.innerHTML = `<p class="kit-name">${a.key ? `<kbd>${escapeHtml(a.key)}</kbd>` : `<span class="ability-trigger">${escapeHtml(a.tag)}</span>`}${escapeHtml(a.name)}</p><p class="kit-blurb">${escapeHtml(a.blurb)}</p>`;
         return row;
       }),
     );
     this.openPanel("pause");
   }
 
-  /** Teach a newly granted ability on its own screen; the chapter waits until it is dismissed. */
-  showLesson(id: Ability, info: AbilityInfo): void {
-    this.bind("ability-glyph").innerHTML = `<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">${ABILITY_GLYPHS[id]}</svg>`;
-    this.bind("ability-title").textContent = info.name;
-    this.bind("ability-use").innerHTML = formatHint(info.lesson.use);
-    this.bind("ability-does").textContent = info.lesson.does;
-    this.bind("ability-tip").textContent = info.lesson.tip;
+  /** Teach something new on its own screen; the chapter waits until it is dismissed. */
+  showLesson(view: LessonView): void {
+    this.bind("ability-eyebrow").textContent = view.eyebrow;
+    this.bind("ability-glyph").innerHTML = `<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">${view.glyph}</svg>`;
+    this.bind("ability-title").textContent = view.title;
+    this.bind("ability-use").innerHTML = formatHint(view.use);
+    this.bind("ability-does").textContent = view.does;
+    this.bind("ability-tip").textContent = view.tip;
     this.el.card!.hidden = true;
     this.cardTimer = 0;
     this.openPanel("ability");
@@ -288,19 +303,20 @@ export class UI {
   }
 
   /** Show a chapter card; `grant` names an ability the chapter gives, announced beneath. */
-  card(chapter: string, title: string, tagline: string, grant = ""): void {
+  /** The chapter card; `news` names what the chapter brings for the first time. */
+  card(chapter: string, title: string, tagline: string, news = ""): void {
     const card = this.el.card!;
     this.bind("card-chapter").textContent = chapter;
     this.bind("card-title").textContent = title;
     this.bind("card-tagline").textContent = tagline;
-    const grantLine = this.bind("card-grant");
-    grantLine.textContent = grant ? `New ability \u00b7 ${grant}` : "";
-    grantLine.hidden = !grant;
+    const newsLine = this.bind("card-grant");
+    newsLine.textContent = news;
+    newsLine.hidden = !news;
     card.hidden = false;
     card.classList.remove("is-visible");
     void card.offsetWidth;
     card.classList.add("is-visible");
-    this.cardTimer = grant ? 5.8 : 3.8;
+    this.cardTimer = news ? 5.8 : 3.8;
   }
 
   /** The ability strip under the inventory: key, name and a readiness bar per ability. */

@@ -1,8 +1,12 @@
 import { ENTITY_PRELUDE } from "./entity-common";
 
-/** Resonance crystal cluster. uP[0]: glow, time, seed, charging. */
+/**
+ * Resonance crystal cluster. uP[0]: glow, time, seed, charging.
+ * uP[1]: song colour (violet for a white crystal, its note's for a tuned one), prism.
+ */
 export const CRYSTAL_FS = /* glsl */ `${ENTITY_PRELUDE}
-const vec3 VIOLET = vec3(0.74, 0.42, 1.0);
+vec3 VIOLET;
+float PRISM;
 
 void shard(inout Surf s, vec2 p, float ang, float len, float wid, float px, float glowAmt, float idx) {
   vec2 d = vec2(cos(ang), sin(ang));
@@ -19,10 +23,14 @@ void shard(inout Surf s, vec2 p, float ang, float len, float wid, float px, floa
   float ridge = 1.0 - smoothstep(0.0, 0.012, abs(q.y));
   float edge = 1.0 - smoothstep(0.0, 0.02, -sd);
   float inner = 0.55 + 0.45 * vnoise(vec2(q.x * 14.0 + idx * 9.0, q.y * 30.0));
-  vec3 alb = vec3(0.5, 0.26, 0.9) * mix(0.3, 0.7, side * 0.5 + 0.5) * inner;
+  vec3 body = mix(VIOLET * vec3(0.68, 0.62, 0.9), vec3(0.62, 0.64, 0.7), PRISM * 0.6);
+  vec3 alb = body * mix(0.3, 0.7, side * 0.5 + 0.5) * inner;
   float depthGlow = 1.0 - clamp(q.x / len, 0.0, 1.0) * 0.6;
-  vec3 emi = VIOLET * glowAmt * (0.55 * depthGlow + edge * 0.6 + ridge * 0.5);
-  emi += vec3(0.8, 0.6, 1.0) * ridge * glowAmt * 0.25;
+  // A prism splits the light: its facets flash every colour, its core sings one note.
+  vec3 spectrum = 0.55 + 0.45 * cos(TAU * (q.x * 3.0 + idx * 0.21 + vec3(0.0, 0.33, 0.67)));
+  vec3 edgeCol = mix(VIOLET, spectrum, PRISM * 0.8);
+  vec3 emi = VIOLET * glowAmt * 0.55 * depthGlow + edgeCol * glowAmt * (edge * 0.6 + ridge * 0.5);
+  emi += mix(vec3(0.8, 0.6, 1.0), spectrum, PRISM) * ridge * (glowAmt * 0.25 + PRISM * 0.05);
   over(s, alb, n, emi, 1.4, 90.0, a);
 }
 
@@ -32,6 +40,8 @@ void main() {
   float glowAmt = uP[0].x;
   float seed = uP[0].z;
   float charging = uP[0].w;
+  VIOLET = uP[1].rgb;
+  PRISM = uP[1].w;
   Surf s = surfEmpty();
 
   float sh = sdCircle(p - vec2(0.03, 0.05), 0.4);

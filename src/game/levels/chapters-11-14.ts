@@ -152,6 +152,11 @@ export const WHERE_THE_DARK_BREATHES: LevelDef = {
   tagline: "Every sound you have ever made was carried here. Three shards, and the last Gate.",
   act: 2,
   abilities: ["deepListen", "focus", "lureStone", "muffle"],
+  endsAct: {
+    title: "The Source of the Breath",
+    text: "The draft that breathed through every cave rises here from a shaft of worked stone — and it is not wind at all. Far below, something vast is being played: pipes wider than halls, bells the size of temples, panes of singing glass, all of it half-ruined and still sounding. The dark was never silent. It is an instrument, and it is out of tune.",
+    next: "Enter the Instrument",
+  },
   stones: 1,
   map: [
     "############################################################",

@@ -57,14 +57,35 @@ export function focusProfile(charge: number): FocusProfile {
 /** Deep Listen: how much further the world's own sounds reveal at full stillness. */
 export const LISTEN_GAIN = 2.4;
 
+/** Seconds a note keeps ringing on chord glass after it arrives. */
+export const CHORD_SUSTAIN = 3.2;
+
+/** The Mimic: how hard a sound must reach it, how long it waits, and the voice it answers in. */
+export const MIMIC_TRIGGER = 0.06;
+export const MIMIC_DELAY = 1.5;
+export const MIMIC_SONG = { radius: 8, strength: 0.85, speed: 8, loudnessCap: 10 } as const;
+
+/** A speaking tube: how hard a sound must strike one mouth to come out of the other. */
+export const TUBE_TRIGGER = 0.12;
+export const TUBE_SONG = { radius: 7, strength: 0.85, speed: 8, loudnessCap: 8 } as const;
+
+/** Energy a focused call must strike a turnable dish with to turn it a quarter step. */
+export const DISH_TURN_TRIGGER = 0.15;
+
 /** Energy a crystal (or resonator) must receive to start singing. */
 export const CRYSTAL_TRIGGER = 0.1;
 
+/** Seconds between a crystal being struck and its song. */
+export const CRYSTAL_DELAY = 0.18;
+
 /** A crystal's answering song: omnidirectional. */
-export const CRYSTAL_SONG = { radius: 8.5, loudness: 10, strength: 0.95 } as const;
+export const CRYSTAL_SONG = { radius: 8.5, loudness: 10, strength: 0.95, speed: 8 } as const;
 
 /**
  * A resonator's song: a crystal backed by a dish, so it sings in one direction
  * only — but the focused beam carries much further.
  */
-export const RESONATOR_SONG = { radius: 13, loudness: 9, strength: 1, halfAngle: 0.45 } as const;
+export const RESONATOR_SONG = { radius: 13, loudness: 9, strength: 1, speed: 10, halfAngle: 0.45 } as const;
+
+/** A bell's ring, which other things hear too. */
+export const BELL_SONG = { radius: 5, loudness: 5, strength: 0.85, speed: 7 } as const;

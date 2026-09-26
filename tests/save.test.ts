@@ -16,9 +16,9 @@ describe("parseSave", () => {
   });
 
   test("keeps valid progress", () => {
-    const s = parseSave({ version: 2, unlocked: 4, last: 3, volumes: { master: 0.5, sfx: 0.6, music: 0.1 }, shake: false, gentle: true });
+    const s = parseSave({ version: 3, unlocked: 4, last: 3, volumes: { master: 0.5, sfx: 0.6, music: 0.1 }, shake: false, gentle: true });
     expect(s).toEqual({
-      version: 2,
+      version: 3,
       unlocked: 4,
       last: 3,
       volumes: { master: 0.5, sfx: 0.6, music: 0.1 },
@@ -32,7 +32,24 @@ describe("parseSave", () => {
     expect(parseSave({ unlocked: 3, last: 3 }).unlocked).toBe(3);
   });
 
-  test("does not bump current-version saves", () => {
+  test("does not bump saves that were already past the Act I finale", () => {
     expect(parseSave({ version: 2, unlocked: 6, last: 6 }).unlocked).toBe(6);
+    expect(parseSave({ version: 2, unlocked: 9, last: 2 }).unlocked).toBe(9);
+  });
+
+  test("opens Act III for version-2 saves that finished Act II", () => {
+    expect(parseSave({ version: 2, unlocked: 13, last: 0 }).unlocked).toBe(14);
+    // Still playing its finale: nothing to open yet.
+    expect(parseSave({ version: 2, unlocked: 13, last: 13 }).unlocked).toBe(13);
+  });
+
+  test("migrates one version at a time", () => {
+    // A version-1 save that finished Act I lands at the start of Act II, not Act III.
+    expect(parseSave({ unlocked: 6, last: 0 }).unlocked).toBe(7);
+  });
+
+  test("does not bump current-version saves", () => {
+    expect(parseSave({ version: 3, unlocked: 13, last: 0 }).unlocked).toBe(13);
+    expect(parseSave({ version: 3, unlocked: 6, last: 0 }).unlocked).toBe(6);
   });
 });

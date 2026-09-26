@@ -1,4 +1,4 @@
-import { TILE } from "../game/level-types";
+import { DECOR, TILE } from "../game/level-types";
 import { createTexture, type GL } from "./gl";
 
 /** Texels per tile of the wall-distance texture. */
@@ -17,11 +17,17 @@ export interface TileSource {
   readonly doorOpen: Float32Array;
   /** Door sigil glow per tile (0..1). */
   readonly doorGlow: Float32Array;
+  /** Floor key note per tile, or -1. */
+  readonly keys: Int8Array;
+  /** Pane index per tile, or -1. */
+  readonly paneAt: Int16Array;
+  readonly glass: readonly { readonly notes: readonly number[]; readonly noteMask: number; readonly ringingMask: number }[];
 }
 
 /**
  * GPU copies of the tile map:
- *  - tiles:    RGBA8 per tile (type, variant, door open | wind index + 1, decor | door glow)
+ *  - tiles:    RGBA8 per tile (type, variant, door open | wind index + 1 | key note + 1 | pane notes,
+ *              decor | door glow | notes ringing on a pane)
  *  - wallDist: RGBA8 at WALLDIST_RES per tile (distance to walls, pits, shore;
  *              alpha: signed distance to the silt edge, 0.5 on it, lower inside)
  */
@@ -73,6 +79,12 @@ export class LevelTextures {
     this.tilesDirty = true;
   }
 
+  /** Water and silt changed places (a sluice): every shore and silt edge is redrawn. */
+  markTerrainDirty(): void {
+    this.tilesDirty = true;
+    this.rebuildDistances();
+  }
+
   /** Solidity changed (a door crossed its open threshold): refresh only around changed tiles. */
   markSolidityDirty(): void {
     this.tilesDirty = true;
@@ -120,18 +132,25 @@ export class LevelTextures {
       const o = i * 4;
       tileData[o] = type;
       tileData[o + 1] = src.variant[i]!;
-      tileData[o + 2] = type === TILE.Draft ? src.wind[i]! + 1 : Math.round(src.doorOpen[i]! * 255);
+      if (type === TILE.Glass) {
+        const pane = src.glass[src.paneAt[i]!]!;
+        tileData[o + 2] = pane.noteMask;
+        tileData[o + 3] = pane.ringingMask;
+        continue;
+      }
+      const key = (src.decor[i]! & DECOR.Key) !== 0 ? src.keys[i]! + 1 : 0;
+      tileData[o + 2] = type === TILE.Draft ? src.wind[i]! + 1 : key > 0 ? key : Math.round(src.doorOpen[i]! * 255);
       tileData[o + 3] = type === TILE.Door ? Math.round(Math.min(1, src.doorGlow[i]!) * 255) : src.decor[i]!;
     }
   }
 
-  /** 1 where the tile blocks like a wall (walls, closed doors). */
+  /** 1 where the tile blocks like a wall (walls, glass, closed doors). */
   private wallMask(): Uint8Array {
     const { src } = this;
     const mask = new Uint8Array(src.w * src.h);
     for (let i = 0; i < mask.length; i++) {
       const t = src.tiles[i];
-      mask[i] = t === TILE.Wall || (t === TILE.Door && src.doorOpen[i]! < 0.5) ? 1 : 0;
+      mask[i] = t === TILE.Wall || t === TILE.Glass || (t === TILE.Door && src.doorOpen[i]! < 0.5) ? 1 : 0;
     }
     return mask;
   }

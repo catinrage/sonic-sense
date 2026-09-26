@@ -1,7 +1,7 @@
 import { ENTITY_VS } from "./entity-common";
 import { AURA_FS, PLAYER_FS, RETICLE_FS } from "./entity-player";
 import { BELL_FS, CRYSTAL_FS, EXIT_FS, MUSHROOM_FS, PILE_FS, PUDDLE_FS, SHARD_FS, STONE_FS } from "./entity-props";
-import { CHIME_FS, CURTAIN_FS, DISH_FS } from "./entity-fixtures";
+import { CHIME_FS, CURTAIN_FS, DISH_FS, MIMIC_FS, TUBE_FS } from "./entity-fixtures";
 import { WARDEN_FS } from "./entity-warden";
 
 export const ENTITY_SHADERS = {
@@ -20,6 +20,8 @@ export const ENTITY_SHADERS = {
   curtain: CURTAIN_FS,
   dish: DISH_FS,
   chime: CHIME_FS,
+  mimic: MIMIC_FS,
+  tube: TUBE_FS,
 } as const;
 
 export type EntityShaderId = keyof typeof ENTITY_SHADERS;

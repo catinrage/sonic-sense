@@ -58,6 +58,11 @@ export function parseLevel(def: LevelDef): LevelData {
     mushrooms: [],
     drips: [],
     chimes: [],
+    keys: new Int8Array(n).fill(-1),
+    glass: [],
+    mimics: [],
+    tubes: [],
+    basins: [],
     hints: [],
   };
 
@@ -78,6 +83,7 @@ export function parseLevel(def: LevelDef): LevelData {
   if (data.player.x < 0) throw new Error(`Level "${def.id}" has no player start ('@')`);
 
   data.wardens = pendingWardens.map((p) => resolveWarden(def.id, p, waypoints));
+  gatherDevices(data);
   hangChimes(data);
   decorate(data, seed);
   return data;
@@ -131,7 +137,7 @@ function applyChar(
       return;
     case "C":
       setFloor();
-      data.crystals.push({ ...center(x, y), facing: null });
+      data.crystals.push({ ...center(x, y), facing: null, note: null, prism: false, turnable: false });
       return;
     case "%":
       setFloor();
@@ -197,6 +203,7 @@ function applyLegend(
         group: entry.group,
         timed: entry.timed ?? 0,
         threshold: entry.threshold ?? 0.3,
+        toggle: entry.toggle ?? false,
       };
       data.bells.push(bell);
       return;
@@ -214,9 +221,73 @@ function applyLegend(
       waypoints.set(ch, center(x, y));
       return;
     case "resonator":
-      data.crystals.push({ ...center(x, y), facing: FACING_DIRS[entry.facing] });
+      data.crystals.push({ ...center(x, y), facing: FACING_DIRS[entry.facing], note: null, prism: false, turnable: false });
+      return;
+    case "crystal":
+      data.crystals.push({
+        ...center(x, y),
+        facing: entry.facing ? FACING_DIRS[entry.facing] : null,
+        note: entry.note ?? null,
+        prism: entry.prism ?? false,
+        turnable: entry.turnable ?? false,
+      });
+      return;
+    case "key":
+      data.decor[y * data.w + x] |= DECOR.Key;
+      data.keys[y * data.w + x] = entry.note;
+      return;
+    case "glass":
+      data.tiles[y * data.w + x] = TILE.Glass;
+      pending(data).glass.get(ch)?.push(y * data.w + x) ?? pending(data).glass.set(ch, [y * data.w + x]);
+      return;
+    case "mimic":
+      data.mimics.push(center(x, y));
+      return;
+    case "tube":
+      pending(data).tubes.get(entry.pair)?.push(center(x, y)) ?? pending(data).tubes.set(entry.pair, [center(x, y)]);
+      return;
+    case "basin":
+      data.tiles[y * data.w + x] = entry.flooded ? TILE.Water : TILE.Silt;
+      pending(data).basins.get(entry.group)?.tiles.push(y * data.w + x) ??
+        pending(data).basins.set(entry.group, { group: entry.group, tiles: [y * data.w + x], flooded: entry.flooded });
       return;
   }
+}
+
+interface PendingDevices {
+  glass: Map<string, number[]>;
+  tubes: Map<string, Vec2[]>;
+  basins: Map<number, { group: number; tiles: number[]; flooded: boolean }>;
+}
+const pendingDevices = new WeakMap<LevelData, PendingDevices>();
+
+function pending(data: LevelData): PendingDevices {
+  let p = pendingDevices.get(data);
+  if (!p) {
+    p = { glass: new Map(), tubes: new Map(), basins: new Map() };
+    pendingDevices.set(data, p);
+  }
+  return p;
+}
+
+/** Panes, tube pairs and basins span several tiles: assemble them once the whole map is read. */
+function gatherDevices(data: LevelData): void {
+  const p = pendingDevices.get(data);
+  if (!p) return;
+  const legend = data.def.legend ?? {};
+  for (const [ch, tiles] of p.glass) {
+    const entry = legend[ch];
+    if (entry?.kind !== "glass") continue;
+    if (entry.notes.length === 0) throw new Error(`Level "${data.def.id}": glass '${ch}' has no notes`);
+    const cx = tiles.reduce((s, i) => s + (i % data.w) + 0.5, 0) / tiles.length;
+    const cy = tiles.reduce((s, i) => s + Math.floor(i / data.w) + 0.5, 0) / tiles.length;
+    data.glass.push({ id: data.glass.length, x: cx, y: cy, tiles, notes: [...entry.notes], threshold: entry.threshold ?? 0.3 });
+  }
+  for (const [pair, mouths] of p.tubes) {
+    if (mouths.length !== 2) throw new Error(`Level "${data.def.id}": tube '${pair}' needs exactly two mouths, found ${mouths.length}`);
+    data.tubes.push({ a: mouths[0]!, b: mouths[1]! });
+  }
+  data.basins = [...p.basins.values()];
 }
 
 /** A chime hangs in the draft blowing past it: its tile takes the wind of a neighbouring draft. */

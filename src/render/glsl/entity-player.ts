@@ -214,6 +214,7 @@ void main() {
 /** Additive halo drawn under the player: charge ring and faint aura. uP[0]: charge, time, sneak, alpha. */
 export const AURA_FS = /* glsl */ `${ENTITY_PRELUDE}
 // uP[0]: charge, time, sneak, alpha. uP[1]: listen, muffled, focusing, aim angle.
+// uP[2]: the note of the key the creature stands on (colour), and whether it stands on one.
 void main() {
   vec2 p = vLocal;
   float ch = uP[0].x;
@@ -224,7 +225,8 @@ void main() {
   float focusing = uP[1].z;
   float aimAng = uP[1].w;
   float r = length(p);
-  vec3 col = vec3(0.3, 0.9, 1.0);
+  float onKey = uP[2].w;
+  vec3 col = mix(vec3(0.3, 0.9, 1.0), uP[2].rgb, onKey);
   float aura = exp(-r * r * 18.0) * 0.05 * (1.0 - uP[0].z * 0.7);
   float ringR = 0.42 + ch * 0.18;
   float ang = atan(p.y, p.x);
@@ -245,6 +247,8 @@ void main() {
   // Muffle: a hushed, slowly turning dotted ring.
   float dots = step(0.55, fract(ang / TAU * 16.0 + time * 0.15));
   c += vec3(0.4, 0.55, 0.9) * exp(-pow((r - 0.34) / 0.014, 2.0)) * dots * muffled * 0.6;
+  // Standing on a key: a steady ring in its note's colour, so the next call's note is never a surprise.
+  c += uP[2].rgb * exp(-pow((r - 0.5) / 0.012, 2.0)) * onKey * (0.35 + 0.1 * sin(time * 3.0));
   outColor = vec4(c * alpha, 0.0);
 }
 `;

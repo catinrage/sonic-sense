@@ -11,6 +11,8 @@ export const TILE = {
   Silt: 5,
   /** Moving air: sound carries further downwind and dies quickly upwind. */
   Draft: 6,
+  /** Singing glass: blocks feet and sound until struck by its note (or its whole chord). */
+  Glass: 7,
 } as const;
 export type TileType = (typeof TILE)[keyof typeof TILE];
 
@@ -34,7 +36,20 @@ export const DECOR = {
   Runes: 8,
   /** A hanging moss curtain: walk through it, but sound cannot pass. */
   Baffle: 16,
+  /** A floor key: a call made standing on it carries its note (`LevelData.keys`). */
+  Key: 32,
 } as const;
+
+/**
+ * The Instrument's five tones, A C D E G — the same pentatonic scale the
+ * crystals always sang. A `Note` indexes NOTE_NAMES (and the audio's pitches).
+ */
+export const NOTE_NAMES = ["A", "C", "D", "E", "G"] as const;
+export type Note = 0 | 1 | 2 | 3 | 4;
+export const NOTES: readonly Note[] = [0, 1, 2, 3, 4];
+
+/** Things the Instrument teaches on their own lesson screen when a chapter introduces them. */
+export type CodexId = "tones" | "glass" | "mimic" | "tubes" | "dishes" | "chords" | "sluices" | "metronome" | "conductor";
 
 export type Facing = "n" | "e" | "s" | "w";
 export const FACING_DIRS: Readonly<Record<Facing, Vec2>> = {
@@ -51,12 +66,28 @@ export const FACING_DIRS: Readonly<Record<Facing, Vec2>> = {
 export type Ability = "deepListen" | "focus" | "lureStone" | "muffle";
 
 export type LegendEntry =
-  | { kind: "bell"; group: number; timed?: number; threshold?: number }
+  | { kind: "bell"; group: number; timed?: number; threshold?: number; toggle?: boolean }
   | { kind: "hint"; text: string; radius?: number }
   | { kind: "warden"; route?: string; speed?: number; creature?: CreatureKind }
   | { kind: "waypoint" }
   /** A crystal backed by a dish: it sings in one direction only, but further. */
-  | { kind: "resonator"; facing: Facing };
+  | { kind: "resonator"; facing: Facing }
+  /**
+   * An Instrument crystal: `note` makes it tuned (wakes only to that note, sings it);
+   * `prism` wakes to anything and sings its note; `facing` backs it with a dish,
+   * which a focused call can turn when `turnable`.
+   */
+  | { kind: "crystal"; note?: Note; prism?: boolean; facing?: Facing; turnable?: boolean }
+  /** A floor key: calls made standing on it carry its note. */
+  | { kind: "key"; note: Note }
+  /** Singing glass. Every tile of one legend character is one pane; two or more notes make a chord. */
+  | { kind: "glass"; notes: readonly Note[]; threshold?: number }
+  /** The Mimic: repeats what it hears, a moment later. */
+  | { kind: "mimic" }
+  /** A speaking-tube mouth; the two mouths with the same `pair` are joined through the rock. */
+  | { kind: "tube"; pair: string }
+  /** A sluice basin tile: water while its group is flooded, silt while drained. */
+  | { kind: "basin"; group: number; flooded: boolean };
 
 export interface StartHint {
   text: string;
@@ -75,11 +106,13 @@ export interface LevelDef {
   stones?: number;
   seed?: number;
   /** Which act the chapter belongs to (defaults to 1). */
-  act?: 1 | 2;
+  act?: 1 | 2 | 3;
   /** Kit the chapter is played and verified with. Defaults to none. */
   abilities?: readonly Ability[];
   /** Newly granted in this chapter (announced on its card). */
   grants?: readonly Ability[];
+  /** Creatures and devices met here for the first time, each taught on a lesson screen. */
+  introduces?: readonly CodexId[];
   /** The chapter closes an act: show this interlude before continuing. */
   endsAct?: { title: string; text: string; next: string };
 }
@@ -87,12 +120,41 @@ export interface LevelDef {
 export interface CrystalSpawn extends Vec2 {
   /** Beam direction of a resonator; null for an ordinary (omnidirectional) crystal. */
   facing: Vec2 | null;
+  /** Tuned crystals wake only to their note and sing it; null is a white crystal. */
+  note: Note | null;
+  /** A prism wakes to any sound and sings its note. */
+  prism: boolean;
+  /** A resonator whose dish a focused call turns a quarter step. */
+  turnable: boolean;
 }
 
 export interface BellSpawn extends Vec2 {
   group: number;
   timed: number;
   threshold: number;
+  /** A sluice bell: each ring floods or drains its group's basins. */
+  toggle: boolean;
+}
+
+export interface GlassSpawn extends Vec2 {
+  /** Index of the pane (its tiles share it). */
+  id: number;
+  tiles: number[];
+  /** One note, or a chord that must ring all at once. */
+  notes: Note[];
+  threshold: number;
+}
+
+export interface TubeSpawn {
+  a: Vec2;
+  b: Vec2;
+}
+
+export interface BasinSpawn {
+  group: number;
+  tiles: number[];
+  /** Initial state: flooded (water) or drained (silt). */
+  flooded: boolean;
 }
 
 export interface WardenSpawn extends Vec2 {
@@ -128,5 +190,11 @@ export interface LevelData {
   drips: Vec2[];
   /** Wind chimes: they ring by themselves when hung in a draft. */
   chimes: Vec2[];
+  /** Floor key note per tile, or -1. */
+  keys: Int8Array;
+  glass: GlassSpawn[];
+  mimics: Vec2[];
+  tubes: TubeSpawn[];
+  basins: BasinSpawn[];
   hints: HintSpawn[];
 }

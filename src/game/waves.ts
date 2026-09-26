@@ -18,7 +18,12 @@ export type WaveKind =
   | "sentinel"
   | "chime"
   | "lure"
-  | "tremor";
+  | "tremor"
+  | "mimic"
+  | "tube"
+  | "glass"
+  | "metronome"
+  | "discord";
 
 /** Kind ids shared with the shaders (uWaveB.w). */
 export const WAVE_KIND_ID: Record<WaveKind, number> = {
@@ -37,6 +42,11 @@ export const WAVE_KIND_ID: Record<WaveKind, number> = {
   chime: 12,
   lure: 13,
   tremor: 14,
+  mimic: 15,
+  tube: 16,
+  glass: 17,
+  metronome: 18,
+  discord: 19,
 };
 
 /** Lower = evicted first when all texture layers are in use. */
@@ -52,6 +62,11 @@ const PRIORITY: Record<WaveKind, number> = {
   lure: 2,
   chime: 2,
   sentinel: 2,
+  mimic: 3,
+  tube: 3,
+  glass: 2,
+  metronome: 2,
+  discord: 3,
   exit: 1,
   door: 2,
   stone: 3,
@@ -88,6 +103,13 @@ export interface WaveSpec {
   own?: boolean;
   /** Solve the field this many times past the visual radius, so Deep Listen can reveal further. */
   revealHeadroom?: number;
+  /** The note it carries (0..4), or null/absent for unpitched ("white") sound. */
+  note?: number | null;
+  /**
+   * The root sound this one descends from. Relays keep it, and a relay answers
+   * each origin at most once, so echoes can never feed back on themselves.
+   */
+  origin?: number;
 }
 
 let nextWaveId = 1;
@@ -107,6 +129,10 @@ export class Wave {
   readonly alerts: boolean;
   readonly glow: number;
   readonly own: boolean;
+  readonly note: number | null;
+  readonly origin: number;
+  /** A directional emitter's beam (a focused call, a resonator), or null. */
+  readonly cone: Cone | null;
   readonly job: FieldJob;
   readonly t0: number;
   readonly lifetime: number;
@@ -128,6 +154,9 @@ export class Wave {
     this.alerts = spec.alerts ?? false;
     this.glow = spec.glow ?? 1;
     this.own = spec.own ?? false;
+    this.note = spec.note ?? null;
+    this.origin = spec.origin ?? this.id;
+    this.cone = spec.cone ?? null;
     this.t0 = now;
     const reach = Math.max(this.radius * (spec.revealHeadroom ?? 1), this.loudness);
     this.job = new FieldJob(grid, spec.x, spec.y, reach, spec.hits ?? false, spec.cone ?? null);
@@ -170,6 +199,14 @@ export class WaveSystem {
   setGrid(grid: SoundGrid): void {
     this.grid = grid;
     this.clear();
+  }
+
+  /**
+   * New sounds solve on this grid from now on. Waves already travelling keep the
+   * grid they started on, so a door or a sluice never changes a field mid-solve.
+   */
+  useGrid(grid: SoundGrid): void {
+    this.grid = grid;
   }
 
   clear(): void {

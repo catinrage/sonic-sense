@@ -1,5 +1,6 @@
 import { HEADER, NOISE, SDF } from "./common";
 import { SONAR } from "./sonar";
+import { INSTRUMENT } from "./instrument";
 
 export const FULLSCREEN_VS = /* glsl */ `#version 300 es
 out vec2 vNdc;
@@ -49,10 +50,14 @@ Tile tileAt(ivec2 t) {
   return ti;
 }
 
+/** Panes of singing glass stand a little lower than the walls around them. */
+const float GLASS_H = WALL_H * 0.88;
+
 float heightOf(Tile ti) {
   if (ti.type == 1) return WALL_H;
   if (ti.type == 2) return -PIT_D;
   if (ti.type == 4) return WALL_H * (1.0 - ti.open);
+  if (ti.type == 7) return GLASS_H;
   return 0.0;
 }
 
@@ -578,6 +583,9 @@ Mat doorMat(Hit h) {
   return m;
 }
 
+// ----------------------------------------------------------- instrument ---
+${INSTRUMENT}
+
 // ----------------------------------------------------------------- main ---
 
 float dissolveGrain(vec2 p) {
@@ -595,8 +603,11 @@ void main() {
   bool isTop = h.face == 0;
   bool isWall = h.ti.type == 1;
   bool isDoor = h.ti.type == 4;
+  bool isGlass = h.ti.type == 7;
   bool isWater = h.ti.type == 3 && isTop;
-  bool isGround = isTop && !isWall && !isDoor && !isWater && h.pos.z > -0.01;
+  bool isGround = isTop && !isWall && !isDoor && !isGlass && !isWater && h.pos.z > -0.01;
+  // A floor key keeps its note in the tile's B channel (note + 1).
+  int keyNote = isGround && (h.ti.decor & 32) != 0 ? int(h.ti.open * 255.0 + 0.5) - 1 : -1;
   vec2 sp = h.pos.xy + h.n.xy * 0.07;
   vec4 wd = textureLod(uWallDist, h.pos.xy / MAP_SIZE, 0.0);
   float silt = isGround ? siltCover(h.pos.xy, wd.a * 2.0 - 1.0) : 0.0;
@@ -611,14 +622,16 @@ void main() {
   float mem = textureLod(uMemory, muv, 0.0).r;
   bool runes = isWall && isTop && (h.ti.decor & 8) != 0;
   bool glowDoor = isDoor && h.ti.aux > 0.01;
+  bool glowGlass = isGlass && h.ti.decor != 0;
   float lightAmt = s.reveal + mem * 0.1 + dot(s.front, vec3(1.0));
-  if (lightAmt < 0.002 && !runes && !glowDoor) {
+  if (lightAmt < 0.002 && !runes && !glowDoor && !glowGlass && keyNote < 0) {
     outColor = vec4(VOID_COL, 1.0);
     return;
   }
 
   Mat m;
-  if (isDoor) m = doorMat(h);
+  if (isGlass) m = glassMat(h, mem, s.reveal);
+  else if (isDoor) m = doorMat(h);
   else if (!isTop) m = wallSideMat(h);
   else if (isWall) m = wallTopMat(h);
   else if (isWater) m = waterMat(h, s, wd.b);
@@ -630,6 +643,7 @@ void main() {
       m.albedo = mix(m.albedo, vec3(0.62, 0.6, 0.55), streak * 0.6);
     }
     if (silt > 0.001) m = mixMat(m, siltMat(h), silt);
+    if (keyNote >= 0) keyInlay(m, h.pos.xy, h.tile, keyNote, clamp(mem * 1.2 + s.reveal * 0.6, 0.0, 1.0));
   }
 
   if (runes) {

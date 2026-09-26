@@ -12,6 +12,9 @@ import type { WardenTraits } from "./warden-traits";
 
 type WardenState = "idle" | "patrol" | "alert" | "hunt" | "search" | "return";
 
+/** Seconds of warning a keeper of the beat gives before each pulse. */
+export const COUNT_IN = 0.7;
+
 interface LegDef {
   hip: readonly [number, number];
   rest: readonly [number, number];
@@ -64,8 +67,12 @@ export class Warden implements Listener {
   private readonly rng: Rng;
   /** Seconds until an alarm from another creature can move it again. */
   private peerCooldown = 0;
-  /** Sentinels: seconds to their next call. Tremors: seconds to their next footfall thump. */
+  /** Sentinels: seconds to their next call. Tremors: seconds to their next footfall thump. Metronomes: to their next beat. */
   private cadence: number;
+  /** A metronome's count-in has sounded for the coming beat. */
+  private counted = false;
+  /** Beats a metronome has kept (its pendulum's swing follows them). */
+  private beats = 0;
   /** Ground sense re-targets at most this often. */
   private feltCooldown = 0;
   private prowlT = 0;
@@ -88,7 +95,8 @@ export class Warden implements Listener {
     this.rng = new Rng(seed);
     this.clickTimer = this.rng.range(0.5, 2.5);
     this.heading = this.rng.range(-Math.PI, Math.PI);
-    this.cadence = this.rng.range(0.4, 1.6);
+    // A strict beat starts on time; everything else starts at a random point of its rhythm.
+    this.cadence = traits.beat > 0 ? traits.beat : this.rng.range(0.4, 1.6);
     this.state = route.length > 0 ? "patrol" : "idle";
     this.legs = LEG_DEFS.map((d) => {
       const [wx, wy] = this.toWorld(d.rest[0], d.rest[1]);
@@ -97,7 +105,8 @@ export class Warden implements Listener {
   }
 
   hear(wave: Wave, sample: FieldSample, world: World): void {
-    if (this.deaf || !wave.alerts || wave.source === this) return;
+    // A keeper of the beat hears nothing: it only sees, at the beat (see spot()).
+    if (this.deaf || !wave.alerts || wave.source === this || this.traits.beat > 0) return;
     const fromPeer = wave.source instanceof Warden;
     if (fromPeer) {
       // Creatures listen to each other only for alarm cries — and never in an endless echo.
@@ -120,6 +129,18 @@ export class Warden implements Listener {
       }
     }
     this.react(tx, ty, world, !fromPeer);
+  }
+
+  /** Its pulse passed over something moving at (x, y). */
+  spot(x: number, y: number, world: World): void {
+    if (this.deaf) return;
+    this.react(x, y, world, true);
+  }
+
+  /** A discord was struck at (x, y): creatures that hear discords go to it from anywhere. */
+  summon(x: number, y: number, world: World): void {
+    if (this.deaf || !this.traits.hearsDiscord) return;
+    this.react(x, y, world, false);
   }
 
   /** Something worth hunting happened at (x, y). Only first-hand detections raise a carrying alarm. */
@@ -264,8 +285,12 @@ export class Warden implements Listener {
     world.events.emit("wardenAlert", { x: this.x, y: this.y, creature: this.traits.kind });
   }
 
-  /** How the creature sees: echolocation clicks, a sentinel's call, or a tremor's footfalls. */
+  /** How the creature sees: echolocation clicks, a sentinel's call, a tremor's footfalls, or a strict beat. */
   private updateVoice(dt: number, world: World): void {
+    if (this.traits.beat > 0) {
+      this.keepBeat(dt, world);
+      return;
+    }
     if (this.traits.pulsePeriod > 0) {
       this.cadence -= dt;
       if (this.cadence <= 0) {
@@ -309,6 +334,42 @@ export class Warden implements Listener {
       return;
     }
     this.updateClicks(dt, world);
+  }
+
+  /** A count-in tick, then the pulse — never early, never late. */
+  private keepBeat(dt: number, world: World): void {
+    this.cadence -= dt;
+    if (!this.counted && this.cadence <= COUNT_IN) {
+      this.counted = true;
+      world.events.emit("metronomeTick", { x: this.x, y: this.y });
+    }
+    if (this.cadence > 0) return;
+    this.cadence += this.traits.beat;
+    this.counted = false;
+    this.beats++;
+    world.emitSound({
+      kind: "metronome",
+      x: this.x,
+      y: this.y,
+      radius: this.traits.pulseRadius,
+      loudness: 0,
+      strength: 0.9,
+      speed: 8,
+      fade: 2.2,
+      color: COLORS.metronome,
+      source: this,
+    });
+    world.events.emit("metronomePulse", { x: this.x, y: this.y });
+  }
+
+  /** Beats kept so far plus the fraction of the next (0 for creatures without a beat). */
+  get beatClock(): number {
+    return this.traits.beat > 0 ? this.beats + 1 - this.cadence / this.traits.beat : 0;
+  }
+
+  /** Seconds until the next beat (Infinity for creatures without one). */
+  get nextBeat(): number {
+    return this.traits.beat > 0 ? this.cadence : Infinity;
   }
 
   /** Tremors feel footfalls through the floor: sneaking, silt and muffling all soften them. */

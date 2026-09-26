@@ -1,16 +1,18 @@
 import type { Input } from "./core/input";
 import type { Renderer } from "./render/renderer";
 import { Stage } from "./game/game";
-import { ABILITY_INFO, abilityViews, lessonsFor } from "./game/abilities";
+import { ABILITY_INFO, abilityViews } from "./game/abilities";
+import { CODEX_INFO, codexOf } from "./game/codex";
 import { callProfile } from "./game/calls";
 import { ACT_NAMES, DIORAMAS, LEVELS, SHOWCASE } from "./game/levels";
 import type { PlayerIntent } from "./game/entities/player";
 import { MAX_STONES } from "./game/entities/player";
 import { COLORS } from "./game/palette";
 import type { World } from "./game/world";
-import type { Ability, LevelDef, StartHint } from "./game/level-types";
+import type { Ability, CodexId, LevelDef, StartHint } from "./game/level-types";
 import { AudioDirector } from "./audio/director";
-import { UI, type ChapterInfo, type EndingContent, type SettingKey, type VolumeBus } from "./ui/ui";
+import { UI, type ChapterInfo, type EndingContent, type KitRow, type LessonView, type SettingKey, type VolumeBus } from "./ui/ui";
+import { ABILITY_GLYPHS, CODEX_GLYPHS } from "./ui/glyphs";
 import { loadSave, persist, type SaveData } from "./save";
 
 const MAX_DT = 1 / 20;
@@ -26,10 +28,28 @@ const LESSON_DELAY = 3.4;
 const FINAL_EPILOGUE: EndingContent = {
   eyebrow: "Epilogue",
   title: "Out of the Dark",
-  text: "The last Gate hums, and the breath of the deep rushes past you, up towards a world that is loud and bright — carrying every sound you ever made. You follow it into the light, and you will never again mistake silence for emptiness.",
+  text: "The Conductor falls still, and the Instrument sounds one last chord — every note you carried through the dark, ringing at once. The breath of the deep rushes past you, up towards a world that is loud and bright. You follow it into the light, and you will never again mistake silence for emptiness.",
   action: { label: "Return to title", id: "title" },
   interlude: false,
 };
+
+function abilityLesson(id: Ability): LessonView {
+  const info = ABILITY_INFO[id];
+  return { eyebrow: "New ability", glyph: ABILITY_GLYPHS[id], title: info.name, ...info.lesson };
+}
+
+function codexLesson(id: CodexId): LessonView {
+  const info = CODEX_INFO[id];
+  return { eyebrow: info.kind === "Creature" ? "In the Instrument \u00b7 a creature" : "In the Instrument", glyph: CODEX_GLYPHS[id], title: info.name, ...info.lesson };
+}
+
+/** What the chapter card announces as new. */
+function newsOf(def: LevelDef): string {
+  const lines: string[] = [];
+  if (def.grants?.length) lines.push(`New ability \u00b7 ${def.grants.map((g) => ABILITY_INFO[g].name).join(" \u00b7 ")}`);
+  if (def.introduces?.length) lines.push(`New \u00b7 ${def.introduces.map((c) => CODEX_INFO[c].name).join(" \u00b7 ")}`);
+  return lines.join("   ");
+}
 
 const DEATH_LINES: Record<"pit" | "warden", [string, string]> = {
   pit: ["The floor was not there", "Press R — or wait"],
@@ -47,8 +67,8 @@ export class App {
   private levelIndex = 0;
   private levelTime = 0;
   private pendingHints: (StartHint & { at: number })[] = [];
-  /** Abilities this chapter grants that have not been taught yet. */
-  private lessons: Ability[] = [];
+  /** What this chapter brings for the first time that has not been taught yet. */
+  private lessons: LessonView[] = [];
   private attract = { timer: 1.4, hold: 0, charge: 0 };
   private hudStones = -1;
   private hadStones = false;
@@ -294,10 +314,9 @@ export class App {
     this.hudStones = -1;
     this.hadStones = (def.stones ?? 0) > 0;
     this.toldNoStones = false;
-    const granted = lessonsFor(def.grants);
-    if (withCard) this.ui.card(`Chapter ${def.chapter}`, def.title, def.tagline, granted.map((g) => g.name).join(" \u00b7 "));
-    // A new ability is taught on its own screen once the card fades; the chapter's own hints follow it.
-    this.lessons = teach ? [...(def.grants ?? [])] : [];
+    if (withCard) this.ui.card(`Chapter ${def.chapter}`, def.title, def.tagline, newsOf(def));
+    // Each new thing is taught on its own screen once the card fades; the chapter's own hints follow.
+    this.lessons = teach ? [...(def.grants ?? []).map(abilityLesson), ...(def.introduces ?? []).map(codexLesson)] : [];
     const after = this.lessons.length > 0 ? LESSON_DELAY : 0;
     this.pendingHints = withCard ? (def.startHints ?? []).map((h) => ({ ...h, at: (h.delay ?? 1) + after })) : [];
     this.save.last = index;
@@ -356,19 +375,23 @@ export class App {
     if (this.mode !== "playing") return;
     this.mode = "paused";
     this.input.enabled = false;
-    const kit = (Object.keys(ABILITY_INFO) as Ability[]).filter((id) => this.stage.world.abilities.has(id));
-    this.ui.showPause(kit.map((id) => ABILITY_INFO[id]));
+    const world = this.stage.world;
+    const kit: KitRow[] = (Object.keys(ABILITY_INFO) as Ability[])
+      .filter((id) => world.abilities.has(id))
+      .map((id) => ({ ...ABILITY_INFO[id], tag: ABILITY_INFO[id].trigger }));
+    for (const id of codexOf(world.level)) kit.push({ name: CODEX_INFO[id].name, key: "", tag: CODEX_INFO[id].kind, blurb: CODEX_INFO[id].blurb });
+    this.ui.showPause(kit);
     this.audio.core.setVolume("sfx", this.save.volumes.sfx * 0.4);
   }
 
-  /** Freeze the chapter and teach the next ability it grants. */
+  /** Freeze the chapter and teach the next new thing it brings. */
   private teach(): void {
-    const id = this.lessons[0];
-    if (id === undefined) return;
+    const lesson = this.lessons[0];
+    if (lesson === undefined) return;
     this.mode = "learning";
     this.input.enabled = false;
     this.ui.clearHints();
-    this.ui.showLesson(id, ABILITY_INFO[id]);
+    this.ui.showLesson(lesson);
     this.audio.core.setVolume("sfx", this.save.volumes.sfx * 0.4);
   }
 
@@ -527,7 +550,7 @@ export class App {
       alerts: true,
       hits: true,
     });
-    this.stage.world.events.emit("pulse", { x: p.x, y: p.y, charge, aim: null });
+    this.stage.world.events.emit("pulse", { x: p.x, y: p.y, charge, aim: null, note: null });
   }
 
   /** Teleport the player and camera for close-up inspection. */

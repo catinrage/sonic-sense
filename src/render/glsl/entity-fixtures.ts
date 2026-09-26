@@ -70,12 +70,15 @@ void main() {
  * along local +x (the entity is rotated to the beam). uP[0]: glow, time.
  */
 export const DISH_FS = /* glsl */ `${ENTITY_PRELUDE}
-const vec3 VIOLET = vec3(0.74, 0.42, 1.0);
+// uP[1]: song colour, turnable. uP[2].x: seconds since the dish last turned.
 void main() {
   vec2 p = vLocal;
   float px = pxSize();
   float glowAmt = uP[0].x;
   float time = uP[0].y;
+  vec3 VIOLET = uP[1].rgb;
+  float turnable = uP[1].w;
+  float turned = uP[2].x;
   Surf s = surfEmpty();
 
   float sh = sdCircle(p - vec2(-0.04, 0.05), 0.5);
@@ -85,6 +88,16 @@ void main() {
   float plinth = sdCircle(p, 0.3);
   vec3 pn = normalize(vec3(p * 2.0 * smoothstep(-0.08, 0.0, plinth), 1.0));
   over(s, vec3(0.2, 0.19, 0.2) * (0.75 + 0.4 * vnoise(p * 24.0)), pn, vec3(0.0), 0.1, 12.0, cover(plinth, px));
+  if (turnable > 0.5) {
+    // A turning dish sits in a notched bronze ring: four seats, a quarter step apart.
+    float r = length(p);
+    float ang = atan(p.y, p.x);
+    float ringD = abs(r - 0.34) - 0.022;
+    float notch = (1.0 - smoothstep(0.0, 0.05, abs(fract(ang / TAU * 4.0 + 0.5) - 0.5) * r * 4.0)) * (1.0 - smoothstep(0.0, 0.03, abs(r - 0.34)));
+    vec3 ringCol = vec3(0.46, 0.32, 0.16) * (0.8 + 0.3 * vnoise(p * 40.0));
+    float grind = exp(-turned * 3.0);
+    over(s, mix(ringCol, vec3(0.05), notch * 0.8), normalize(vec3(p * 1.5, 1.0)), vec3(1.0, 0.62, 0.25) * grind * 0.5, 1.2, 60.0, cover(ringD, px));
+  }
 
   // The reflector: a crescent behind the crystal, thickest at its back, its hollow facing the beam.
   vec2 c = vec2(0.26, 0.0);
@@ -157,6 +170,100 @@ void main() {
     over(s, vec3(0.03), vec3(0.0, 0.0, 1.0), ICE * ring * 0.4, 0.0, 8.0, cover(hollow, px));
     gHalo += ICE * exp(-length(p - c) * 18.0) * ring * 0.25;
   }
+  outColor = finish(s, 0.6, vec3(0.0));
+}
+`;
+
+/**
+ * The Mimic: a rooted mound of grey flesh ringed with small round mouths that
+ * gape while it repeats what it heard. uP[0]: voice (1 while echoing), time, seed.
+ * uP[1].rgb: the colour of what it last repeated.
+ */
+export const MIMIC_FS = /* glsl */ `${ENTITY_PRELUDE}
+void main() {
+  vec2 p = vLocal;
+  float px = pxSize();
+  float voice = uP[0].x;
+  float time = uP[0].y;
+  float seed = uP[0].z;
+  vec3 tint = uP[1].rgb;
+  Surf s = surfEmpty();
+
+  float sh = sdCircle(p - vec2(0.04, 0.06), 0.46);
+  over(s, vec3(0.0), vec3(0.0, 0.0, 1.0), vec3(0.0), 0.0, 8.0, (1.0 - smoothstep(-0.2, 0.06, sh)) * 0.55);
+
+  // Root tendrils gripping the floor.
+  for (int i = 0; i < 6 + LOOP_ZERO; i++) {
+    float a = float(i) * 1.047 + seed * 6.28;
+    vec2 d = vec2(cos(a), sin(a));
+    vec2 bend = vec2(-d.y, d.x) * 0.06 * sin(a * 3.0);
+    vec4 root = vec4(sdSegment(p, d * 0.2, d * 0.46 + bend), 0.0, 0.0, 0.0);
+    over(s, vec3(0.2, 0.18, 0.2), vec3(0.0, 0.0, 1.0), vec3(0.0), 0.2, 12.0, cover(root.x - 0.025 * (1.0 - length(p) / 0.5), px));
+  }
+
+  // The mound breathes, and swells as it speaks.
+  float swell = 1.0 + 0.04 * sin(time * 1.3 + seed * 5.0) + voice * 0.06;
+  float body = sdCircle(p, 0.3 * swell) + (vnoise(p * 9.0 + seed * 3.0) - 0.5) * 0.05;
+  vec3 flesh = vec3(0.42, 0.38, 0.4) * (0.75 + 0.45 * vnoise(p * 22.0 + seed));
+  over(s, flesh, domeNormal(p, body, 0.3, 1.6), vec3(0.0), 0.6, 30.0, cover(body, px));
+
+  // Mouths: rings of lips around dark throats, open while it speaks.
+  for (int i = 0; i < 5 + LOOP_ZERO; i++) {
+    float a = float(i) * 1.2566 + seed * 3.0;
+    vec2 c = i == 4 ? vec2(0.0) : vec2(cos(a), sin(a)) * 0.17;
+    if (i == 4) c = vec2(0.0, 0.0);
+    float open = 0.018 + voice * 0.035 * (0.7 + 0.3 * sin(time * 30.0 + float(i) * 2.0));
+    float lip = abs(sdCircle(p - c, open + 0.02)) - 0.012;
+    float throat = sdCircle(p - c, open);
+    over(s, flesh * 1.25, normalize(vec3((p - c) * 10.0, 1.0)), vec3(0.0), 0.9, 40.0, cover(lip, px));
+    over(s, vec3(0.02), vec3(0.0, 0.0, 1.0), tint * voice * 1.2, 0.0, 8.0, cover(throat, px));
+    gHalo += tint * exp(-length(p - c) * 26.0) * voice * 0.35;
+  }
+  outColor = finish(s, 0.6, vec3(0.0));
+}
+`;
+
+/**
+ * A speaking-tube mouth: a flared bronze horn set in the floor. Its twin is marked
+ * with the same number of rivets. uP[0]: voice (1 just after it speaks), time, pair.
+ * uP[1].rgb: the colour of what last came out.
+ */
+export const TUBE_FS = /* glsl */ `${ENTITY_PRELUDE}
+void main() {
+  vec2 p = vLocal;
+  float px = pxSize();
+  float voice = uP[0].x;
+  float time = uP[0].y;
+  float pair = uP[0].z;
+  vec3 tint = uP[1].rgb;
+  Surf s = surfEmpty();
+  float r = length(p);
+  float ang = atan(p.y, p.x);
+
+  float sh = sdCircle(p - vec2(0.03, 0.05), 0.36);
+  over(s, vec3(0.0), vec3(0.0, 0.0, 1.0), vec3(0.0), 0.0, 8.0, (1.0 - smoothstep(-0.15, 0.05, sh)) * 0.5);
+
+  // The flare: bronze rings stepping down into the throat.
+  float bell = sdCircle(p, 0.33);
+  vec3 bronze = vec3(0.52, 0.35, 0.17) * (0.75 + 0.4 * vnoise(vec2(ang * 6.0, r * 40.0)));
+  float step = fract(r * 14.0);
+  vec3 n = normalize(vec3(-(p / max(r, 1e-4)) * (0.6 + 0.4 * step), 1.0));
+  over(s, bronze * (0.7 + 0.3 * step), n, vec3(0.0), 1.4, 70.0, cover(bell, px));
+  float lip = abs(r - 0.31) - 0.02;
+  over(s, bronze * 1.3, normalize(vec3(p * 2.0, 1.0)), vec3(0.0), 1.6, 90.0, cover(lip, px));
+
+  // Rivets on the lip: as many as its pair number, so twins can be matched.
+  for (int i = 0; i < 4 + LOOP_ZERO; i++) {
+    if (float(i) > pair) break;
+    float a = float(i) * 0.5 - pair * 0.25;
+    float rv = length(p - vec2(cos(a), sin(a)) * 0.31) - 0.018;
+    over(s, bronze * 1.6, vec3(0.0, 0.0, 1.0), vec3(1.0, 0.7, 0.35) * 0.08, 2.0, 100.0, cover(rv, px));
+  }
+
+  float throat = sdCircle(p, 0.12);
+  float pulse = voice * (0.7 + 0.3 * sin(time * 24.0 - r * 30.0));
+  over(s, vec3(0.01), vec3(0.0, 0.0, 1.0), tint * pulse * 1.1, 0.0, 8.0, cover(throat, px));
+  gHalo += tint * exp(-r * 8.0) * voice * 0.3;
   outColor = finish(s, 0.6, vec3(0.0));
 }
 `;

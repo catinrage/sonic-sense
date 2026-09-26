@@ -3,9 +3,11 @@ import { fxRng } from "../../core/rng";
 import { moveCircle } from "../collision";
 import { TILE } from "../level-types";
 import { callProfile, focusProfile } from "../calls";
-import { COLORS } from "../palette";
+import { COLORS, noteColor } from "../palette";
+import type { FieldSample } from "../geodesic";
 import type { Wave } from "../waves";
 import type { World } from "../world";
+import { Warden } from "./warden";
 
 export interface PlayerIntent {
   moveX: number;
@@ -39,6 +41,10 @@ export const IDLE_INTENT: Readonly<PlayerIntent> = {
 };
 
 export const MAX_STONES = 3;
+/** Below this speed (tiles/s) the creature counts as still to a metronome's pulse. */
+export const STILL_SPEED = 0.3;
+/** The faint edge of a metronome's pulse sees nothing. */
+const SEEN_ENERGY = 0.08;
 /** How far (tiles) a creeping footfall carries to a listening hunter. */
 export const SNEAK_LOUDNESS = 1.5;
 /** Seconds of stillness before Deep Listen starts, and to reach full depth. */
@@ -47,10 +53,12 @@ const LISTEN_RISE = 1.2;
 export const MUFFLE_TIME = 4;
 /** Measured from activation, so it includes the muffled seconds. */
 export const MUFFLE_COOLDOWN = 14;
-const WALK_SPEED = 3.3;
+export const WALK_SPEED = 3.3;
 const SNEAK_SPEED = 1.55;
-const CHARGE_TIME = 1.15;
-const PULSE_COOLDOWN = 0.32;
+/** Seconds of holding for a full-breath call. */
+export const CHARGE_TIME = 1.15;
+/** Seconds after a call before the next can start charging. */
+export const PULSE_COOLDOWN = 0.32;
 
 export class Player {
   readonly r = 0.26;
@@ -128,8 +136,11 @@ export class Player {
   }
 
   /** Ears swivel towards sounds the creature hears. */
-  hear(wave: Wave): void {
+  hear(wave: Wave, sample: FieldSample, world: World): void {
     if (wave.source === this || this.dying) return;
+    // A metronome's pulse sees whatever is moving as it passes.
+    const seen = wave.kind === "metronome" && this.entering <= 0 && Math.hypot(this.vx, this.vy) > STILL_SPEED && wave.energyAt(sample) > SEEN_ENERGY;
+    if (seen && wave.source instanceof Warden) wave.source.spot(this.x, this.y, world);
     const rel = angleDiff(this.facing, Math.atan2(wave.y - this.y, wave.x - this.x));
     const swivel = clamp(rel * 0.35, -0.6, 0.6);
     this.earTargetL = rel < 0 ? swivel * 1.2 : swivel * 0.5;
@@ -191,6 +202,7 @@ export class Player {
     const aim = this.aimDirection(intent);
     this.facing = Math.atan2(aim.y, aim.x);
     const f = focusProfile(c);
+    const note = world.keyNoteAt(this.x, this.y);
     world.emitSound({
       kind: "pulse",
       x: this.x,
@@ -200,13 +212,14 @@ export class Player {
       strength: f.strength,
       speed: f.speed,
       fade: f.fade,
-      color: COLORS.focus,
+      color: noteColor(note, COLORS.focus),
       source: this,
       alerts: true,
       hits: true,
       cone: { x: aim.x, y: aim.y, halfAngle: f.halfAngle },
+      note,
     });
-    world.events.emit("pulse", { x: this.x, y: this.y, charge: c, aim });
+    world.events.emit("pulse", { x: this.x, y: this.y, charge: c, aim, note });
   }
 
   private aimDirection(intent: PlayerIntent): Vec2 {
@@ -256,6 +269,8 @@ export class Player {
     this.charge = 0;
     this.cooldown = PULSE_COOLDOWN;
     const call = callProfile(c);
+    // Standing on a floor key, the call carries its note.
+    const note = world.keyNoteAt(this.x, this.y);
     world.emitSound({
       kind: "pulse",
       x: this.x,
@@ -265,12 +280,13 @@ export class Player {
       strength: call.strength,
       speed: call.speed,
       fade: call.fade,
-      color: COLORS.pulse,
+      color: noteColor(note, COLORS.pulse),
       source: this,
       alerts: true,
       hits: true,
+      note,
     });
-    world.events.emit("pulse", { x: this.x, y: this.y, charge: c, aim: null });
+    world.events.emit("pulse", { x: this.x, y: this.y, charge: c, aim: null, note });
   }
 
   private updateMovement(dt: number, intent: PlayerIntent, world: World): void {
