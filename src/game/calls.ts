@@ -89,3 +89,6 @@ export const RESONATOR_SONG = { radius: 13, loudness: 9, strength: 1, speed: 10,
 
 /** A bell's ring, which other things hear too. */
 export const BELL_SONG = { radius: 5, loudness: 5, strength: 0.85, speed: 7 } as const;
+
+/** A metronome's pulse: silent to other creatures, but it lights the hall and wakes what hears it. */
+export const METRONOME_PULSE = { strength: 0.9, speed: 8 } as const;

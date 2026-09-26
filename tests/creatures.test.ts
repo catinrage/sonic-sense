@@ -127,3 +127,72 @@ describe("patrols", () => {
     expect(furthest).toBeGreaterThan(35);
   });
 });
+
+describe("metronome", () => {
+  const room = ["##################", "#................#", "#..@......N......#", "#................#", "##################"];
+  const legend: LevelDef["legend"] = { N: { kind: "warden", creature: "metronome" } };
+
+  test("keeps a strict beat, with a count-in before each pulse", () => {
+    const world = worldOf(room, legend);
+    const ticks: number[] = [];
+    const pulses: number[] = [];
+    world.events.on("metronomeTick", () => ticks.push(world.time));
+    world.events.on("metronomePulse", () => pulses.push(world.time));
+    run(world, 10);
+    expect(pulses.length).toBe(3);
+    for (let i = 1; i < pulses.length; i++) expect(pulses[i]! - pulses[i - 1]!).toBeCloseTo(3, 1);
+    ticks.forEach((t, i) => expect(pulses[i]! - t).toBeCloseTo(0.7, 1));
+  });
+
+  test("is deaf: a full call does not move it", () => {
+    const world = worldOf(room, legend);
+    call(world, 1.2);
+    run(world, 2);
+    expect(world.wardens[0]!.state).toBe("idle");
+  });
+
+  test("sees what moves as its pulse passes, and not what keeps still", () => {
+    const still = worldOf(room, legend);
+    run(still, 4);
+    expect(still.wardens[0]!.state).toBe("idle");
+
+    const moving = worldOf(room, legend);
+    let spotted = false;
+    for (let t = 0; t < 4 && !spotted; t += 1 / 60) {
+      moving.update(1 / 60, { ...IDLE, moveY: Math.sin(t * 6) > 0 ? 1 : -1 });
+      spotted = moving.wardens[0]!.state !== "idle";
+    }
+    expect(spotted).toBe(true);
+  });
+});
+
+describe("conductor", () => {
+  test("hears a discord struck anywhere, however far, and goes to it", () => {
+    const map = [
+      "##########################################",
+      "#K.....................................###",
+      "#.......................................h#",
+      "#......................................@e#",
+      "##########################################",
+    ];
+    const world = worldOf(map, { K: { kind: "warden", creature: "conductor" }, h: { kind: "glass", notes: [0, 4] }, e: { kind: "key", note: 3 } });
+    const conductor = world.wardens[0]!;
+    world.player.x = 40.5;
+    world.player.y = 3.5;
+    // An E at a pane that wants A and G: far too far away for the call itself to be heard, but a discord.
+    const discords: number[] = [];
+    world.events.on("discord", () => discords.push(world.time));
+    call(world, 1.2);
+    run(world, 0.5);
+    expect(discords).toHaveLength(1);
+    expect(conductor.state === "alert" || conductor.state === "hunt").toBe(true);
+    run(world, 3);
+    expect(conductor.x).toBeGreaterThan(5);
+  });
+
+  test("never gives up a hunt on the way", () => {
+    const traits = worldOf(["#####", "#K@.#", "#####"], { K: { kind: "warden", creature: "conductor" } }).wardens[0]!.traits;
+    expect(traits.giveUpAfter).toBe(Infinity);
+    expect(traits.hearsDiscord).toBe(true);
+  });
+});

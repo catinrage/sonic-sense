@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { World, type WorldEvents } from "../src/game/world";
 import { parseLevel } from "../src/game/level-parser";
 import { checkLevel } from "../src/game/level-check";
+import { chordRings } from "../src/game/check-acoustics";
 import { FULL_CALL, MIMIC_DELAY } from "../src/game/calls";
 import { COLORS } from "../src/game/palette";
 import { TILE, type Ability, type LevelDef } from "../src/game/level-types";
@@ -156,6 +157,16 @@ describe("chords", () => {
     expect(checkLevel(parseLevel(def(map, legend))).errors).toEqual([]);
     const oneKey = def(map.map((r) => r.replace("e", ".")), legend);
     expect(checkLevel(parseLevel(oneKey)).errors).toContain("exit is unreachable");
+  });
+
+  test("the checker hears a chord's notes in the order they arrive", () => {
+    const at = (t: number, tone: number) => ({ t, tone });
+    expect(chordRings([at(0.4, A), at(1.4, E)], [A, E], 3)).toBe(true);
+    // A discord before the last note silences the first; one after it comes too late to matter.
+    expect(chordRings([at(0.4, A), at(1.0, C), at(1.4, E)], [A, E], 3)).toBe(false);
+    expect(chordRings([at(0.4, A), at(1.4, E), at(2.0, C)], [A, E], 3)).toBe(true);
+    // Notes that have died away do not count.
+    expect(chordRings([at(0.4, A), at(4.0, E)], [A, E], 3)).toBe(false);
   });
 
   test("keys too far apart to reach in time do not prove a chord", () => {

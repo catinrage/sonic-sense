@@ -202,21 +202,23 @@ void main() {
   }
 
   // The mound breathes, and swells as it speaks.
-  float swell = 1.0 + 0.04 * sin(time * 1.3 + seed * 5.0) + voice * 0.06;
-  float body = sdCircle(p, 0.3 * swell) + (vnoise(p * 9.0 + seed * 3.0) - 0.5) * 0.05;
-  vec3 flesh = vec3(0.42, 0.38, 0.4) * (0.75 + 0.45 * vnoise(p * 22.0 + seed));
-  over(s, flesh, domeNormal(p, body, 0.3, 1.6), vec3(0.0), 0.6, 30.0, cover(body, px));
+  float swell = 1.0 + 0.04 * sin(time * 1.3 + seed * 5.0) + voice * 0.07;
+  float lobes = 0.03 * sin(atan(p.y, p.x) * 5.0 + seed * 6.0);
+  float body = sdCircle(p, (0.37 + lobes) * swell) + (vnoise(p * 9.0 + seed * 3.0) - 0.5) * 0.05;
+  vec3 flesh = vec3(0.5, 0.44, 0.47) * (0.75 + 0.45 * vnoise(p * 22.0 + seed));
+  flesh = mix(flesh, vec3(0.62, 0.42, 0.46), smoothstep(0.1, 0.35, length(p)) * 0.35);
+  over(s, flesh, domeNormal(p, body, 0.37, 1.6), vec3(0.0), 0.6, 30.0, cover(body, px));
 
-  // Mouths: rings of lips around dark throats, open while it speaks.
-  for (int i = 0; i < 5 + LOOP_ZERO; i++) {
-    float a = float(i) * 1.2566 + seed * 3.0;
-    vec2 c = i == 4 ? vec2(0.0) : vec2(cos(a), sin(a)) * 0.17;
-    if (i == 4) c = vec2(0.0, 0.0);
-    float open = 0.018 + voice * 0.035 * (0.7 + 0.3 * sin(time * 30.0 + float(i) * 2.0));
-    float lip = abs(sdCircle(p - c, open + 0.02)) - 0.012;
+  // Mouths: a ring of lipped throats round a larger central one, gaping while it speaks.
+  for (int i = 0; i < 7 + LOOP_ZERO; i++) {
+    float a = float(i) * 1.0472 + seed * 3.0;
+    vec2 c = i == 6 ? vec2(0.0) : vec2(cos(a), sin(a)) * 0.22;
+    float base = i == 6 ? 0.045 : 0.028;
+    float open = base + voice * 0.035 * (0.7 + 0.3 * sin(time * 30.0 + float(i) * 2.0));
+    float lip = abs(sdCircle(p - c, open + 0.022)) - 0.014;
     float throat = sdCircle(p - c, open);
-    over(s, flesh * 1.25, normalize(vec3((p - c) * 10.0, 1.0)), vec3(0.0), 0.9, 40.0, cover(lip, px));
-    over(s, vec3(0.02), vec3(0.0, 0.0, 1.0), tint * voice * 1.2, 0.0, 8.0, cover(throat, px));
+    over(s, flesh * 1.3, normalize(vec3((p - c) * 10.0, 1.0)), tint * 0.05, 0.9, 40.0, cover(lip, px));
+    over(s, vec3(0.02), vec3(0.0, 0.0, 1.0), tint * (0.04 + voice * 1.2), 0.0, 8.0, cover(throat, px));
     gHalo += tint * exp(-length(p - c) * 26.0) * voice * 0.35;
   }
   outColor = finish(s, 0.6, vec3(0.0));

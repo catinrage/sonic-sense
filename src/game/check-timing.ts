@@ -1,6 +1,6 @@
 import type { Vec2 } from "../core/math";
 import { CHORD_SUSTAIN } from "./calls";
-import { cascade, chordRings, WHITE, type Cascade } from "./check-acoustics";
+import { cascade, chordRings, WHITE, type Cascade, type PaneHit } from "./check-acoustics";
 import { CHARGE_TIME, PULSE_COOLDOWN, WALK_SPEED } from "./entities/player";
 import type { Situation } from "./level-check";
 import { TILE } from "./level-types";
@@ -43,8 +43,9 @@ export function provePanesAndTimedDoors(s: Situation, passable: ReadonlySet<numb
   };
   const tiles: number[] = [];
   s.reachable.forEach((r, i) => r && tiles.push(i));
+  const ambient = combos.map((facings) => s.ambient.map((a) => cascade(s.ac, s.relays, facings, s.panes, a.at, WHITE, a.voice)));
 
-  const broken = chords.filter((p) => proveChord(s, p, tiles, combos.length, cascadeAt));
+  const broken = chords.filter((p) => proveChord(s, p, tiles, combos.length, cascadeAt, ambient));
   const opened = timed.filter((b) => proveTimedDoor(s, b, combos.length, cascadeAt)).map((b) => s.level.bells[b]!.group);
   return { broken, passable: [...new Set(opened)] };
 }
@@ -67,6 +68,7 @@ function clean(s: Situation, cas: Cascade, pane: number): boolean {
     if (q === pane || s.broken.has(q)) continue;
     const notes = s.panes[q]!.pane.notes;
     const hits = cas.hits[q]!;
+    // Another pane breaking, or silenced by a discord that carries, would change the level mid-chord.
     if (notes.length === 1 ? hits.some((h) => h.tone === notes[0]) : hits.some((h) => !(notes as readonly number[]).includes(h.tone)) || chordRings(hits, notes, CHORD_SUSTAIN)) return false;
   }
   return s.relays.every((r, k) => {
@@ -80,19 +82,22 @@ type CascadeAt = (tile: number, combo: number) => Cascade;
 
 /**
  * A chord pane breaks from one call (a keyed call and the prisms and relays it
- * sets off), or from two keyed calls made one after the other — the second as
- * soon as the creature can walk to its key and draw a full breath.
+ * sets off), from two keyed calls made one after the other — the second as
+ * soon as the creature can walk to its key and draw a full breath — or from a
+ * call timed against a sound the level keeps making by itself (a metronome's beat).
  */
-function proveChord(s: Situation, pane: number, tiles: readonly number[], combos: number, cascadeAt: CascadeAt): boolean {
+function proveChord(s: Situation, pane: number, tiles: readonly number[], combos: number, cascadeAt: CascadeAt, ambient: Cascade[][]): boolean {
   const notes = s.panes[pane]!.pane.notes;
   const sustain = CHORD_SUSTAIN - SUSTAIN_SLACK;
   for (let combo = 0; combo < combos; combo++) {
     const useful: number[] = [];
+    const beats = ambient[combo]!.filter((a) => a.hits[pane]!.length > 0 && clean(s, a, pane));
     for (const tile of tiles) {
       const cas = cascadeAt(tile, combo);
       const hits = cas.hits[pane]!;
       if (hits.length === 0 || !clean(s, cas, pane)) continue;
       if (chordRings(hits, notes, sustain)) return true;
+      if (beats.some((beat) => alignsWith(hits, beat.hits[pane]!, notes, sustain))) return true;
       if (s.level.keys[tile]! >= 0 && hits.every((h) => (notes as readonly number[]).includes(h.tone))) useful.push(tile);
     }
     for (const a of useful) {
@@ -110,6 +115,11 @@ function proveChord(s: Situation, pane: number, tiles: readonly number[], combos
     }
   }
   return false;
+}
+
+/** Whether a call's arrivals, timed freely against a repeating sound's, can ring the whole chord. */
+function alignsWith(own: readonly PaneHit[], beat: readonly PaneHit[], notes: readonly number[], sustain: number): boolean {
+  return own.some((a) => beat.some((b) => chordRings([...own, ...beat.map((h) => ({ t: h.t - b.t + a.t, tone: h.tone }))], notes, sustain)));
 }
 
 /** A timed door can be passed if its bell rings from somewhere the creature reaches the door from in time. */

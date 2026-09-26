@@ -9,8 +9,9 @@ is to make a sound: your call spreads out as a wave, bends around corners, and
 lights up whatever it touches — then the echo fades and the dark closes in again.
 
 Every sound is also a risk. Blind **Wardens** hunt by ear, and the louder you
-call, the further you are heard. Fourteen chapters in two acts: the sunken
-temple, and then the breathing dark beneath it.
+call, the further you are heard. Twenty-one chapters in three acts: the sunken
+temple, the breathing dark beneath it, and the half-ruined Instrument at the
+bottom of it all.
 
 ## Play
 
@@ -77,6 +78,34 @@ played with, and grants at most one new one:
   Each is taught on its own screen when its chapter begins (the chapter waits
   until you have read it), the HUD shows what sets each one off, and the pause
   menu lists the abilities the current chapter is played with.
+
+### Act III — The Instrument
+
+At the bottom of the dark, something vast is still being played, out of tune.
+Act III keeps the whole Act II kit and adds no abilities: its new things are
+devices and creatures, each taught on its own lesson screen the first time it
+appears, and listed in the pause menu wherever it is.
+
+- **The five tones.** Call standing on a floor key and your voice carries its
+  note — A, C, D, E or G, each with its own colour and mark (triangle, ring,
+  diamond, bars, cross), so no note is told by colour alone. Elsewhere your
+  calls are plain. **Tuned crystals** wake only to their own note and sing it;
+  **prisms** wake to anything and always sing theirs; white crystals sing plain.
+- **Singing glass** blocks the way and every sound until it is struck hard by
+  its note — then it shatters for good. **Chords** need two or three notes
+  ringing on the pane at once (each rings about three seconds); a note outside
+  the chord is a **discord** that silences it and carries far.
+- **The Mimic** repeats whatever it hears a breath and a half later, in the
+  same note — your footsteps too. **Speaking tubes** carry a sound from one
+  bronze mouth to the other at once, whatever it is. Every relay answers each
+  sound once, so echoes never feed back.
+- **Turning dishes** sing one way only; a focused call turns one a quarter step.
+- **Sluice bells** flood or drain their basins: water carries notes and betrays
+  steps, silt swallows both.
+- **The Metronome** is deaf, but its pulse, on a strict beat with a tick before
+  it, sees anything moving as it passes. **The Conductor** is slow, relentless,
+  and hears every discord struck anywhere in the Instrument — which makes a
+  wrong note, played on purpose far away, the best lure there is.
 
 Progress and settings are saved in the browser.
 
@@ -164,7 +193,11 @@ set the balance; the two loops stay stereo and sit well below them.
 
 The Act II sounds — sentinel calls, tremor footfalls, wind chimes, the focused
 call, Muffle, lure chirps, soft steps on silt and the wind bed that swells in
-drafts — are synthesized; no samples exist for them yet.
+drafts — are synthesized; no samples exist for them yet. So are the Act III
+sounds (`sounds-instrument.ts`): the note a keyed call sings, glass ringing,
+clinking and shattering, discords, the Mimic, the tubes, turning dishes,
+sluices and the Metronome — synthesis keeps every note exactly in tune with the
+crystals.
 
 **Still synthesized on purpose.** The call (`pulse`), the footsteps on stone
 and in water, and the menu hover tick sounded better procedural in play-testing,
@@ -201,13 +234,18 @@ Levels are ASCII maps (`src/game/levels`):
 | `>` `<` `v` `^` | Draft (blowing that way) | `%` | Moss curtain |
 | `&` | Wind chime | `C` | Resonance crystal |
 | `W` | Warden | `s` `m` `d` | Stone pile, glow-caps, drip |
-| `1`–`9` | Door of that group | other | Legend: bells, hints, waypoints, creatures, resonators |
+| `1`–`9` | Door of that group | other | Legend: bells (sluice bells too), hints, waypoints, creatures, resonators, keys, tuned crystals and prisms, glass, mimics, tubes, basins |
 
 `bun test` checks every chapter two ways. A static solver proves each one is
 solvable with exactly the abilities it declares — including doors opened by
 sound relayed through crystals and aimed resonators, and bells reached only on
 the wind (it solves each field backwards from the target with the wind negated;
 directional cost is antisymmetric, so that yields the forward costs exactly).
-And a scripted bot plays the chapters start to finish through the real
-simulation — luring, sneaking past and timing its way around the creatures
-exactly as a player would.
+For the Instrument it also tracks the note of every sound, relays through
+crystals, prisms, mimics, tubes and bells, every way the turning dishes can
+face, every state the sluices can reach, and — for chords and timed doors —
+follows a single call through everything it sets off, with real travel times
+and delays, played against a metronome's beat where there is one (`check-*.ts`).
+Tests prove each chapter's new device is actually needed. And a scripted bot
+plays the chapters start to finish through the real simulation — luring,
+sneaking past and timing its way around the creatures exactly as a player would.

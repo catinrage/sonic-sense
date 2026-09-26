@@ -4,6 +4,7 @@ import { CHOIR_OF_GLASS, DEEP_GATE, STILL_WATER, THE_LISTENER } from "./chapters
 import { BREATHING_HALLS, SILT_FLATS, WHAT_WALKS_BELOW } from "./chapters-8-10";
 import { CHOIR_OF_MANY, THE_PATIENT_ONE, THE_WATCHER, WHERE_THE_DARK_BREATHES } from "./chapters-11-14";
 import { CHORD, ECHO_OF_AN_ECHO, THE_TUNING_HALL, THE_TURNING_DISHES } from "./chapters-15-18";
+import { THE_CONDUCTOR, THE_METRONOME, THE_SLUICES } from "./chapters-19-21";
 
 import { BESTIARY } from "./bestiary";
 import { SHOWCASE } from "./showcase";
@@ -51,4 +52,7 @@ export const LEVELS: readonly LevelDef[] = [
   ECHO_OF_AN_ECHO,
   THE_TURNING_DISHES,
   CHORD,
+  THE_SLUICES,
+  THE_METRONOME,
+  THE_CONDUCTOR,
 ];

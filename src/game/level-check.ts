@@ -1,5 +1,6 @@
 import type { Vec2 } from "../core/math";
-import { DISH_TURN_TRIGGER, FULL_CALL, focusProfile } from "./calls";
+import { DISH_TURN_TRIGGER, FULL_CALL, focusProfile, METRONOME_PULSE } from "./calls";
+import { creatureTraits } from "./entities/warden-traits";
 import { Acoustics, relaysOf, TONES, WHITE, type PaneEars, type Relay, type Strike, type Voice } from "./check-acoustics";
 import { provePanesAndTimedDoors } from "./check-timing";
 import { paneFaces } from "./entities/glass";
@@ -80,6 +81,11 @@ export interface Situation {
   call: Voice;
   /** The focused call, aimed at whatever it is tested against; null without Focus. */
   focus: Voice | null;
+  /**
+   * Sounds the level makes on its own, again and again: a metronome's pulse from
+   * where it keeps its beat. Unpitched; the player chooses when to answer them.
+   */
+  ambient: { at: Vec2; voice: Voice }[];
   /** Directions each relay may sing along: one, or four for a dish a focused call can turn. */
   facings: (Vec2 | null)[][];
   /** Tones each relay can be made to answer with, by some call from somewhere reachable. */
@@ -202,7 +208,11 @@ function situate(
   const abilities = new Set(level.def.abilities ?? []);
   const call: Voice = FULL_CALL;
   const focus: Voice | null = abilities.has("focus") ? { ...focusProfile(1), halfAngle: undefined } : null;
-  const s: Situation = { level, ac, relays, panes, reachable, stand, call, focus, facings: [], awake: [], open: progress.open, broken: progress.broken };
+  const ambient = level.wardens.flatMap((w) => {
+    const traits = creatureTraits(w.creature);
+    return traits.beat > 0 ? [{ at: { x: w.x, y: w.y }, voice: { ...METRONOME_PULSE, radius: traits.pulseRadius } }] : [];
+  });
+  const s: Situation = { level, ac, relays, panes, reachable, stand, call, focus, ambient, facings: [], awake: [], open: progress.open, broken: progress.broken };
 
   s.facings = relays.map((r) => {
     const turned = turning && focus && r.turnable && TONES.some((t) => ac.best(stand[t]!, focus, r.ear.x, r.ear.y) >= DISH_TURN_TRIGGER);
@@ -214,13 +224,17 @@ function situate(
   return s;
 }
 
-/** The most any call of the player's, carrying `tone`, delivers to `at`. `anyTone` ignores the tone. */
+/**
+ * The most any call of the player's, carrying `tone`, delivers to `at` — or, for
+ * unpitched sound, anything the level keeps sounding by itself. `anyTone` ignores the tone.
+ */
 export function playerHeard(s: Situation, at: Vec2, focus: boolean, anyTone = false, tone = WHITE): number {
   let best = 0;
   for (const t of anyTone ? TONES : [tone]) {
     const points = s.stand[t]!;
     best = Math.max(best, s.ac.best(points, s.call, at.x, at.y));
     if (focus && s.focus) best = Math.max(best, s.ac.best(points, s.focus, at.x, at.y));
+    if (t === WHITE) for (const a of s.ambient) best = Math.max(best, s.ac.best([a.at], a.voice, at.x, at.y));
   }
   return best;
 }

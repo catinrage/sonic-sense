@@ -309,6 +309,7 @@ export class App {
     this.stage.post.fade = 1;
     this.ui.clearMessage();
     this.ui.clearHints();
+    this.ui.hideLesson();
     this.ui.showHud(def.chapter, def.title);
     this.ui.setShards(0, world.shards.length);
     this.hudStones = -1;

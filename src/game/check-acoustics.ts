@@ -281,13 +281,28 @@ function popEarliest(queue: Emission[]): Emission {
   return ev;
 }
 
+/** A discord this close after a chord completes might, with a frame's timing, land first. */
+const DISCORD_MARGIN = 0.15;
+
 /**
  * Whether a chord pane rings every one of its notes at once, given the pitched
- * arrivals it hears (in any order). Each note rings for `sustain` seconds after
- * it arrives; any off-chord note is a discord, which this treats as failure
- * outright (it silences the pane, and it carries).
+ * arrivals it hears, played in time order as the pane hears them: each note
+ * rings for `sustain` seconds after it arrives, and an off-chord note is a
+ * discord that silences every note ringing. The pane breaks the moment all
+ * its notes ring together.
  */
 export function chordRings(hits: readonly PaneHit[], notes: readonly number[], sustain: number): boolean {
-  if (hits.some((h) => !notes.includes(h.tone))) return false;
-  return hits.some((end) => notes.every((n) => hits.some((h) => h.tone === n && h.t <= end.t && end.t - h.t < sustain)));
+  const events = [...hits].sort((a, b) => a.t - b.t);
+  const discord = (h: PaneHit) => !notes.includes(h.tone);
+  const rang = new Map<number, number>();
+  for (const ev of events) {
+    if (discord(ev)) {
+      rang.clear();
+      continue;
+    }
+    rang.set(ev.tone, ev.t);
+    if (!notes.every((n) => rang.has(n) && ev.t - rang.get(n)! < sustain)) continue;
+    if (!events.some((d) => discord(d) && d.t >= ev.t && d.t <= ev.t + DISCORD_MARGIN)) return true;
+  }
+  return false;
 }

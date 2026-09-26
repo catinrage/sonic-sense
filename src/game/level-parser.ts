@@ -288,6 +288,29 @@ function gatherDevices(data: LevelData): void {
     data.tubes.push({ a: mouths[0]!, b: mouths[1]! });
   }
   data.basins = [...p.basins.values()];
+  for (const basin of data.basins) fillBasin(data, basin);
+}
+
+/**
+ * A marker drawn inside a basin (a creature, a waypoint, a shard) leaves plain
+ * floor under it. Any floor tile the basin surrounds on three sides or more
+ * joins it, so the basin floods and drains as one piece.
+ */
+function fillBasin(data: LevelData, basin: { tiles: number[]; flooded: boolean }): void {
+  const inBasin = new Set(basin.tiles);
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (let i = 0; i < data.tiles.length; i++) {
+      if (data.tiles[i] !== TILE.Floor || inBasin.has(i) || data.keys[i]! >= 0) continue;
+      const x = i % data.w;
+      const around = [i - 1, i + 1, i - data.w, i + data.w].filter((n) => (n === i - 1 && x === 0) || (n === i + 1 && x === data.w - 1) ? false : inBasin.has(n)).length;
+      if (around < 3) continue;
+      inBasin.add(i);
+      basin.tiles.push(i);
+      data.tiles[i] = basin.flooded ? TILE.Water : TILE.Silt;
+      changed = true;
+    }
+  }
 }
 
 /** A chime hangs in the draft blowing past it: its tile takes the wind of a neighbouring draft. */

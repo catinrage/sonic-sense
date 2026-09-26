@@ -12,6 +12,8 @@ export interface GoOptions {
   sneak?: boolean;
   /** Give up after this many simulated seconds. */
   timeout?: number;
+  /** Stand still whenever this holds (a metronome's pulse is about to pass). */
+  still?: (w: World) => boolean;
 }
 
 /**
@@ -56,6 +58,11 @@ export class Bot {
       if (d < (last ? 0.08 : 0.22)) {
         idx++;
         best = Infinity;
+        continue;
+      }
+      if (opts.still?.(w)) {
+        this.step({});
+        lastProgress = w.time;
         continue;
       }
       if (d < best - 0.02) {

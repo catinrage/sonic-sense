@@ -67,9 +67,13 @@ void main() {
 }
 `;
 
-/** Bell in a stone frame. uP[0]: ring, time, wobble, timer fraction. uP[1].x: group. */
+/**
+ * Bell in a stone frame. uP[0]: ring, time, wobble, timer fraction. uP[1].x: group.
+ * uP[1].y: a sluice bell (a bronze spout, its rim running with water); uP[1].z: its basins flooded.
+ */
 export const BELL_FS = /* glsl */ `${ENTITY_PRELUDE}
 const vec3 AMBER = vec3(1.0, 0.66, 0.26);
+const vec3 WATER = vec3(0.35, 0.62, 1.0);
 
 void main() {
   vec2 p = vLocal;
@@ -79,6 +83,8 @@ void main() {
   float wobble = uP[0].z;
   float timerFrac = uP[0].w;
   float group = uP[1].x;
+  float sluice = uP[1].y;
+  float flooded = uP[1].z;
   Surf s = surfEmpty();
 
   float sh = sdRoundBox(p - vec2(0.04, 0.05), vec2(0.5), 0.12);
@@ -91,6 +97,17 @@ void main() {
   vec3 pn = normalize(vec3(-normalize(g + 1e-6) * (1.0 - bev) * 1.5, 1.0));
   vec3 stone = vec3(0.24, 0.23, 0.25) * (0.75 + 0.4 * vnoise(p * 14.0));
   over(s, stone, pn, vec3(0.0), 0.12, 16.0, cover(plinth, px));
+
+  if (sluice > 0.5) {
+    // A sluice bell: a bronze spout out of the plinth's side, and a channel round its rim
+    // that shows water while its basins are full and dry sand while they are drained.
+    float spout = sdRoundBox(p - vec2(0.52, 0.0), vec2(0.12, 0.07), 0.04);
+    over(s, vec3(0.5, 0.34, 0.16), normalize(vec3(0.0, -p.y * 10.0, 1.0)), vec3(0.0), 1.4, 60.0, cover(spout, px));
+    float lip = abs(sdRoundBox(p, vec2(0.41), 0.05)) - 0.018;
+    vec3 channel = mix(vec3(0.3, 0.26, 0.2), WATER * 0.35, flooded);
+    float shimmer = flooded * (0.5 + 0.5 * sin(time * 3.0 + (p.x + p.y) * 20.0));
+    over(s, channel, vec3(0.0, 0.0, 1.0), WATER * (shimmer * 0.12 + ring * 0.6), mix(0.1, 1.6, flooded), 80.0, cover(lip, px));
+  }
 
   // Group marker: small inlaid dots along the lower edge.
   for (int i = 0; i < 4 + LOOP_ZERO; i++) {

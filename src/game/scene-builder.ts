@@ -50,14 +50,15 @@ export class SceneBuilder {
       this.add("crystal", c.x + shake, c.y, 0.03, c.seed * 6.28, 0.62, 0.62, 5 + c.y * 0.001, [c.glow, t, c.seed, c.pending >= 0 ? 1 : 0], [...tint, c.prism ? 1 : 0]);
     }
     for (const m of world.mimics) {
-      this.add("mimic", m.x, m.y, 0.03, 0, 0.56, 0.56, 5 + m.y * 0.001, [m.voice, t, m.seed, 0], [...noteColor(m.lastNote, COLORS.mimic), 0]);
+      this.add("mimic", m.x, m.y, 0.03, 0, 0.62, 0.62, 5 + m.y * 0.001, [m.voice, t, m.seed, 0], [...noteColor(m.lastNote, COLORS.mimic), 0]);
     }
     world.tubes.forEach((m, i) => {
       this.add("tube", m.x, m.y, 0.012, 0, 0.42, 0.42, 1.5, [m.voice, t, Math.floor(i / 2) % 4, 0], [...noteColor(m.lastNote, COLORS.tube), 0]);
     });
     for (const b of world.bells) {
       const timerFrac = b.timed > 0 ? b.timer / b.timed : 0;
-      this.add("bell", b.x, b.y, 0.04, 0, 0.62, 0.62, 5 + b.y * 0.001, [b.ring, t, b.wobble, timerFrac], [b.group, 0, 0, 0]);
+      const flooded = b.toggle && world.flooded.get(b.group) ? 1 : 0;
+      this.add("bell", b.x, b.y, 0.04, 0, 0.66, 0.66, 5 + b.y * 0.001, [b.ring, t, b.wobble, timerFrac], [b.group, b.toggle ? 1 : 0, flooded, 0]);
     }
     for (let i = 0; i < world.wardens.length; i++) {
       const w = world.wardens[i]!;

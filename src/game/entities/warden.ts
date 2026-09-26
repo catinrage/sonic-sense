@@ -3,6 +3,7 @@ import { Rng } from "../../core/rng";
 import { moveCircle } from "../collision";
 import type { FieldSample } from "../geodesic";
 import { TILE } from "../level-types";
+import { METRONOME_PULSE } from "../calls";
 import { COLORS } from "../palette";
 import { findPath, nearestWalkable } from "../pathfinding";
 import type { Wave } from "../waves";
@@ -353,8 +354,8 @@ export class Warden implements Listener {
       y: this.y,
       radius: this.traits.pulseRadius,
       loudness: 0,
-      strength: 0.9,
-      speed: 8,
+      strength: METRONOME_PULSE.strength,
+      speed: METRONOME_PULSE.speed,
       fade: 2.2,
       color: COLORS.metronome,
       source: this,
