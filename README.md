@@ -105,6 +105,33 @@ than bundled, and `bun run build` copies whatever is in `src/assets/audio/` into
 `dist/` alongside an `index.json` manifest of what is actually there — the
 client reads that manifest first, so nothing absent is ever requested.
 
+### Generated audio
+
+Everything in `src/assets/audio/` was generated with **ElevenLabs** — sound
+effects with `eleven_text_to_sound_v2`, and the title score with
+`eleven_music_v2`. 34 files, 1.7 MB.
+
+| Sound | Files | Used for |
+| --- | --- | --- |
+| `call-short`, `call-long` | 2 + 1 | The creature's chirp and its charged call, replayed through every echo tap |
+| `step-stone`, `step-water` | 3 + 3 | Footsteps on dry stone and through shallow water |
+| `stone-throw`, `stone-hit`, `pickup` | 1 + 2 + 1 | Throwing, landing and gathering stones |
+| `crystal`, `bell` | 1 + 1 | Resonance crystals (retuned per pitch) and bronze bells (retuned per group) |
+| `door-open`, `door-close`, `tick` | 1 + 1 + 1 | Stone slabs and the timed-door countdown |
+| `warden-click`, `warden-shriek` | 3 + 1 | Warden echolocation and alarm |
+| `shard`, `gate-hum`, `gate-awake` | 1 + 1 + 1 | Echo Shards and the Gate |
+| `drip` | 2 | Cave drips |
+| `death-pit`, `death-warden`, `complete` | 1 + 1 + 1 | Endings |
+| `ui-move`, `ui-select` | 1 + 1 | Menus |
+| `ambience-loop`, `title-loop` | 1 + 1 | Cave bed (30 s) and title score (60 s), crossfaded |
+
+One-shots are mono and peak-normalized so the per-sound gains in `sounds.ts`
+set the balance; the two loops stay stereo and sit well below them. Only the
+stone-in-water impact is still synthesized — no generated sample covers it.
+
+The heartbeat, the room echo taps, the cave reverb and all spatialization
+remain procedural.
+
 ## Project layout
 
 ```
@@ -114,7 +141,7 @@ src/app.ts             Modes, level flow, UI + audio wiring
 src/game/              Simulation: world, entities, sound fields, levels, effects
 src/render/            WebGL2 renderer and GLSL (scene, sonar, entities, post)
 src/audio/             Audio engine, sample bank, recipes, ambience
-src/assets/audio/      Generated sound effects and ambient loops (optional)
+src/assets/audio/      Generated sound effects and ambient loops (ElevenLabs)
 src/ui/                DOM overlay (menus, HUD, cards)
 tests/                 Solver, level solvability, simulation, scripted playthroughs
 tools/                 Screenshot harness and level analysis
