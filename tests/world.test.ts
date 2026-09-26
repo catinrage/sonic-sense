@@ -5,6 +5,7 @@ import { LEVELS } from "../src/game/levels";
 import type { LevelDef } from "../src/game/level-types";
 import type { PlayerIntent } from "../src/game/entities/player";
 import { TILE } from "../src/game/level-types";
+import { MAX_WAVES } from "../src/game/waves";
 
 const IDLE: PlayerIntent = {
   moveX: 0,
@@ -165,5 +166,48 @@ describe("goals", () => {
     expect(world.shardsCollected).toBe(1);
     expect(world.exit!.active).toBe(true);
     expect(complete).toBe(true);
+  });
+});
+
+describe("wave layers", () => {
+  /**
+   * Texture layers are a rendering budget, not a simulation one. A wave that
+   * loses its layer must still be heard, or a relayed sound can vanish and
+   * break a puzzle the solvability checker proved solvable.
+   */
+  test("a wave evicted from its texture layer is still heard", () => {
+    // A long corridor, so the front is still travelling when eviction happens.
+    // 12 tiles: far enough that the front is still in flight, near enough to
+    // still carry threshold energy when it lands.
+    const map = ["#".repeat(16), "#@" + ".".repeat(12) + "C#", "#".repeat(16)];
+    const world = worldOf(map);
+    const crystal = world.crystals[0]!;
+    let sang = false;
+    world.events.on("crystal", () => (sang = true));
+
+    // A low-priority wave, so the flood below will take its layer.
+    const travelling = world.emitSound({
+      kind: "step",
+      x: world.player.x,
+      y: world.player.y,
+      radius: 26,
+      strength: 1.25,
+      speed: 8,
+      fade: 4,
+      color: [1, 1, 1],
+    });
+    expect(travelling.layer).toBeGreaterThanOrEqual(0);
+    expect(crystal.pending).toBe(-1); // front has not reached it yet
+
+    // Fill every layer with higher-priority waves.
+    for (let i = 0; i < MAX_WAVES; i++) {
+      world.emitSound({ kind: "pulse", x: 2, y: 1, radius: 1, color: [1, 1, 1] });
+    }
+
+    expect(travelling.layer).toBe(-1); // lost its reveal...
+    expect(world.waves.waves).toContain(travelling); // ...but not its physics
+
+    run(world, 3.5);
+    expect(sang).toBe(true);
   });
 });

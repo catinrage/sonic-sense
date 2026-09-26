@@ -35,9 +35,12 @@ export const WAVE_KIND_ID: Record<WaveKind, number> = {
 const PRIORITY: Record<WaveKind, number> = {
   step: 0,
   drip: 0,
+  // A warden's echolocation click is pure ambience (loudness 0), so it yields
+  // its layer before anything that carries gameplay meaning. With several
+  // creatures on screen these would otherwise churn layers constantly.
+  warden: 0,
   splash: 1,
   exit: 1,
-  warden: 2,
   door: 2,
   stone: 3,
   bell: 3,
@@ -182,12 +185,23 @@ export class WaveSystem {
     return s;
   }
 
+  /**
+   * Claim a texture layer, taking one from the least important visible wave
+   * when all are in use.
+   *
+   * The evicted wave keeps running in the simulation and is still heard — only
+   * its reveal is dropped. Listeners are notified as the front reaches them
+   * (see World.processHearing), so removing the wave outright would silently
+   * swallow every arrival still to come: a bell strike or a crystal relay could
+   * simply never land, breaking a puzzle the solvability checker proved.
+   */
   private allocateLayer(): number {
     const free = this.freeLayers.pop();
     if (free !== undefined) return free;
     let victim = -1;
     for (let i = 0; i < this.waves.length; i++) {
       const w = this.waves[i]!;
+      if (w.layer < 0) continue;
       if (victim < 0) {
         victim = i;
         continue;
@@ -195,8 +209,10 @@ export class WaveSystem {
       const v = this.waves[victim]!;
       if (PRIORITY[w.kind] < PRIORITY[v.kind] || (PRIORITY[w.kind] === PRIORITY[v.kind] && w.t0 < v.t0)) victim = i;
     }
-    const layer = this.waves[victim]!.layer;
-    this.waves.splice(victim, 1);
+    if (victim < 0) return -1;
+    const evicted = this.waves[victim]!;
+    const layer = evicted.layer;
+    evicted.layer = -1;
     return layer;
   }
 
