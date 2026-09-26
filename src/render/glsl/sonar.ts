@@ -52,8 +52,9 @@ Sonar sonarAt(vec2 p, float grain, float frontGain) {
     vec4 B = uWaveB[i];
     float R = B.x;
     float lim = R + 2.1;
+    float reach = lim * WAVE_REACH;
     vec2 dp = p - A.xy;
-    if (dot(dp, dp) > lim * lim) continue;
+    if (dot(dp, dp) > reach * reach) continue;
     vec4 f = textureLod(uField, vec3(p / MAP_SIZE, B.z), 0.0);
     float d = f.x;
     if (d > lim) continue;

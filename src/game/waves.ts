@@ -1,5 +1,5 @@
 import type { RGB } from "../core/math";
-import { FieldJob, UNREACHED, type FieldSample, type SoundGrid } from "./geodesic";
+import { FieldJob, UNREACHED, type Cone, type FieldSample, type SoundGrid } from "./geodesic";
 
 export const MAX_WAVES = 16;
 
@@ -14,7 +14,11 @@ export type WaveKind =
   | "wardenAlert"
   | "exit"
   | "drip"
-  | "door";
+  | "door"
+  | "sentinel"
+  | "chime"
+  | "lure"
+  | "tremor";
 
 /** Kind ids shared with the shaders (uWaveB.w). */
 export const WAVE_KIND_ID: Record<WaveKind, number> = {
@@ -29,6 +33,10 @@ export const WAVE_KIND_ID: Record<WaveKind, number> = {
   exit: 8,
   drip: 9,
   door: 10,
+  sentinel: 11,
+  chime: 12,
+  lure: 13,
+  tremor: 14,
 };
 
 /** Lower = evicted first when all texture layers are in use. */
@@ -39,7 +47,11 @@ const PRIORITY: Record<WaveKind, number> = {
   // its layer before anything that carries gameplay meaning. With several
   // creatures on screen these would otherwise churn layers constantly.
   warden: 0,
+  tremor: 0,
   splash: 1,
+  lure: 2,
+  chime: 2,
+  sentinel: 2,
   exit: 1,
   door: 2,
   stone: 3,
@@ -70,6 +82,12 @@ export interface WaveSpec {
   hits?: boolean;
   /** Visual brightness multiplier (does not change gameplay energy). */
   glow?: number;
+  /** Directional emitter: the sound leaves only within this beam. */
+  cone?: Cone;
+  /** Made by the player (Deep Listen never amplifies the creature's own sounds). */
+  own?: boolean;
+  /** Solve the field this many times past the visual radius, so Deep Listen can reveal further. */
+  revealHeadroom?: number;
 }
 
 let nextWaveId = 1;
@@ -88,6 +106,7 @@ export class Wave {
   readonly source: object | null;
   readonly alerts: boolean;
   readonly glow: number;
+  readonly own: boolean;
   readonly job: FieldJob;
   readonly t0: number;
   readonly lifetime: number;
@@ -108,11 +127,13 @@ export class Wave {
     this.source = spec.source ?? null;
     this.alerts = spec.alerts ?? false;
     this.glow = spec.glow ?? 1;
+    this.own = spec.own ?? false;
     this.t0 = now;
-    this.job = new FieldJob(grid, spec.x, spec.y, Math.max(this.radius, this.loudness), spec.hits ?? false);
+    const reach = Math.max(this.radius * (spec.revealHeadroom ?? 1), this.loudness);
+    this.job = new FieldJob(grid, spec.x, spec.y, reach, spec.hits ?? false, spec.cone ?? null);
     this.x = this.job.originX;
     this.y = this.job.originY;
-    this.lifetime = Math.max(this.radius, this.loudness) / this.speed + this.fade + 0.4;
+    this.lifetime = reach / this.speed + this.fade + 0.4;
   }
 
   age(now: number): number {
@@ -140,7 +161,7 @@ export class Wave {
 export class WaveSystem {
   readonly waves: Wave[] = [];
   private readonly freeLayers: number[] = [];
-  private readonly scratch: FieldSample = { d: 0, e: 0 };
+  private readonly scratch: FieldSample = { d: 0, e: 0, dx: 0, dy: 0 };
 
   constructor(private grid: SoundGrid) {
     for (let i = MAX_WAVES - 1; i >= 0; i--) this.freeLayers.push(i);

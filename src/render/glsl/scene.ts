@@ -58,6 +58,12 @@ float heightOf(Tile ti) {
 
 float heightAt(ivec2 t) { return heightOf(tileAt(t)); }
 
+/** A draft tile's wind direction (the tile texture's B channel holds its index + 1). */
+vec2 windOf(Tile ti) {
+  int k = int(ti.open * 255.0 + 0.5);
+  return k == 1 ? vec2(1.0, 0.0) : k == 2 ? vec2(-1.0, 0.0) : k == 3 ? vec2(0.0, 1.0) : vec2(0.0, -1.0);
+}
+
 struct Hit { vec3 pos; vec3 n; ivec2 tile; int face; Tile ti; };
 
 // face: 0 = top surface, 1 = vertical face, 2 = abyss
@@ -299,6 +305,64 @@ Mat floorMat(Hit h, float wallD, float pitD) {
   return m;
 }
 
+// ----------------------------------------------------------------- silt ---
+
+/** Fine sediment combed into soft ripples. */
+float siltH(vec2 p) {
+  vec2 q = p + vec2(fbm(p * 0.6, 2), fbm(p * 0.6 + 9.0, 2)) * 1.1;
+  float ripple = sin(dot(q, vec2(7.5, 2.6)) + fbm(q * 1.7, 2) * 4.0);
+  return ripple * 0.011 + fbm(p * 7.0, 2) * 0.006;
+}
+
+/** Dark, matte and soft: the ground that swallows footsteps shows almost nothing. */
+Mat siltMat(Hit h) {
+  Mat m;
+  vec2 p = h.pos.xy;
+  const float e = 0.004;
+  float h0 = siltH(p);
+  m.n = normalize(vec3(-(siltH(p + vec2(e, 0.0)) - h0) / e, -(siltH(p + vec2(0.0, e)) - h0) / e, 1.0));
+  vec3 c = mix(vec3(0.16, 0.15, 0.135), vec3(0.22, 0.2, 0.175), vnoise(p * 1.3));
+  c *= 0.8 + 0.35 * smoothstep(-0.01, 0.01, h0);
+  float mica = step(0.992, hash1(ivec2(floor(p * 70.0))));
+  m.albedo = c;
+  m.spec = 0.03 + mica * 1.2;
+  m.gloss = mix(6.0, 140.0, mica);
+  m.emissive = vec3(0.0);
+  m.ao = 1.0;
+  m.edge = 0.0;
+  return m;
+}
+
+Mat mixMat(Mat a, Mat b, float t) {
+  Mat m;
+  m.albedo = mix(a.albedo, b.albedo, t);
+  m.n = normalize(mix(a.n, b.n, t));
+  m.spec = mix(a.spec, b.spec, t);
+  m.gloss = mix(a.gloss, b.gloss, t);
+  m.emissive = mix(a.emissive, b.emissive, t);
+  m.ao = mix(a.ao, b.ao, t);
+  m.edge = mix(a.edge, b.edge, t);
+  return m;
+}
+
+/** How much silt covers a point, from the signed edge distance (negative inside), with a ragged border. */
+float siltCover(vec2 p, float sd) {
+  return 1.0 - smoothstep(-0.22, 0.22, sd + (vnoise(p * 4.5) - 0.5) * 0.3 + (vnoise(p * 17.0) - 0.5) * 0.08);
+}
+
+// ---------------------------------------------------------------- draft ---
+
+/** Pale dust combed into streaks by moving air, drifting downwind. */
+float windStreaks(vec2 p, vec2 w) {
+  vec2 side = vec2(-w.y, w.x);
+  float along = dot(p, w) - TIME * 0.9;
+  float across = dot(p, side);
+  float n = vnoise(vec2(along * 0.9, across * 16.0)) * 0.65 + vnoise(vec2(along * 2.1 - TIME * 0.6, across * 34.0 + 7.0)) * 0.35;
+  // Gusts: the dust gathers in drifting patches rather than even stripes.
+  float gust = smoothstep(0.25, 0.75, vnoise(vec2(along * 0.4 - TIME * 0.3, across * 1.3 + 3.0)));
+  return smoothstep(0.5, 0.8, n) * (0.35 + 0.65 * gust);
+}
+
 // ---------------------------------------------------------------- water ---
 
 float waterH(vec2 p) {
@@ -532,13 +596,16 @@ void main() {
   bool isWall = h.ti.type == 1;
   bool isDoor = h.ti.type == 4;
   bool isWater = h.ti.type == 3 && isTop;
+  bool isGround = isTop && !isWall && !isDoor && !isWater && h.pos.z > -0.01;
   vec2 sp = h.pos.xy + h.n.xy * 0.07;
   vec4 wd = textureLod(uWallDist, h.pos.xy / MAP_SIZE, 0.0);
+  float silt = isGround ? siltCover(h.pos.xy, wd.a * 2.0 - 1.0) : 0.0;
   // Edges (slab joints, wall bases, chasm rims, wall faces) linger longer as the echo fades.
   float edgeHint = !isTop ? 0.55 : 1.0 - smoothstep(0.0, 0.1, min(wd.r, wd.g));
-  if (isTop && !isWall && !isDoor && !isWater) edgeHint = max(edgeHint, 1.0 - smoothstep(0.0, 0.05, slabLayout(h.pos.xy).x));
+  if (isGround) edgeHint = max(edgeHint, (1.0 - smoothstep(0.0, 0.05, slabLayout(h.pos.xy).x)) * (1.0 - silt));
   float grain = dissolveGrain(h.pos.xy + vec2(h.pos.z * 1.7)) * (1.0 - 0.8 * edgeHint);
-  float frontGain = !isTop ? 0.6 : (h.pos.z > 0.3 ? 0.28 : (isWater ? 1.25 : 1.0));
+  // The travelling front sinks into silt instead of skating across it.
+  float frontGain = !isTop ? 0.6 : (h.pos.z > 0.3 ? 0.28 : (isWater ? 1.25 : mix(1.0, 0.3, silt)));
   Sonar s = sonarAt(sp, grain, frontGain);
   vec2 muv = sp / MAP_SIZE;
   float mem = textureLod(uMemory, muv, 0.0).r;
@@ -555,7 +622,15 @@ void main() {
   else if (!isTop) m = wallSideMat(h);
   else if (isWall) m = wallTopMat(h);
   else if (isWater) m = waterMat(h, s, wd.b);
-  else m = floorMat(h, wd.r, wd.g);
+  else if (silt > 0.999) m = siltMat(h);
+  else {
+    m = floorMat(h, wd.r, wd.g);
+    if (h.ti.type == 6) {
+      float streak = windStreaks(h.pos.xy, windOf(h.ti));
+      m.albedo = mix(m.albedo, vec3(0.62, 0.6, 0.55), streak * 0.6);
+    }
+    if (silt > 0.001) m = mixMat(m, siltMat(h), silt);
+  }
 
   if (runes) {
     vec2 q = h.pos.xy - vec2(h.tile) - 0.5;

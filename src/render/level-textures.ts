@@ -11,6 +11,8 @@ export interface TileSource {
   readonly tiles: Uint8Array;
   readonly variant: Uint8Array;
   readonly decor: Uint8Array;
+  /** Wind per tile (index into WIND_DIRS, -1 = still air). */
+  readonly wind: Int8Array;
   /** Door open amount per tile (0 closed .. 1 sunk into the floor). */
   readonly doorOpen: Float32Array;
   /** Door sigil glow per tile (0..1). */
@@ -19,8 +21,9 @@ export interface TileSource {
 
 /**
  * GPU copies of the tile map:
- *  - tiles:    RGBA8 per tile (type, variant, door open, decor | door glow)
- *  - wallDist: RGBA8 at WALLDIST_RES per tile (distance to walls, pits, shore)
+ *  - tiles:    RGBA8 per tile (type, variant, door open | wind index + 1, decor | door glow)
+ *  - wallDist: RGBA8 at WALLDIST_RES per tile (distance to walls, pits, shore;
+ *              alpha: signed distance to the silt edge, 0.5 on it, lower inside)
  */
 export class LevelTextures {
   readonly w: number;
@@ -117,7 +120,7 @@ export class LevelTextures {
       const o = i * 4;
       tileData[o] = type;
       tileData[o + 1] = src.variant[i]!;
-      tileData[o + 2] = Math.round(src.doorOpen[i]! * 255);
+      tileData[o + 2] = type === TILE.Draft ? src.wind[i]! + 1 : Math.round(src.doorOpen[i]! * 255);
       tileData[o + 3] = type === TILE.Door ? Math.round(Math.min(1, src.doorGlow[i]!) * 255) : src.decor[i]!;
     }
   }
@@ -142,9 +145,15 @@ export class LevelTextures {
     const n = src.w * src.h;
     const pits = new Uint8Array(n);
     const dry = new Uint8Array(n);
+    const silt = new Uint8Array(n);
+    // Open ground that is not silt: what silt thins out against (walls do not count).
+    const bare = new Uint8Array(n);
     for (let i = 0; i < n; i++) {
-      pits[i] = src.tiles[i] === TILE.Pit ? 1 : 0;
-      dry[i] = src.tiles[i] === TILE.Water ? 0 : 1;
+      const t = src.tiles[i];
+      pits[i] = t === TILE.Pit ? 1 : 0;
+      dry[i] = t === TILE.Water ? 0 : 1;
+      silt[i] = t === TILE.Silt ? 1 : 0;
+      bare[i] = t !== TILE.Silt && t !== TILE.Wall ? 1 : 0;
     }
     const x0 = Math.max(0, tx0);
     const y0 = Math.max(0, ty0);
@@ -153,6 +162,7 @@ export class LevelTextures {
     for (let ty = y0; ty <= y1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {
         const inWater = dry[ty * src.w + tx] === 0;
+        const inSilt = silt[ty * src.w + tx] === 1;
         for (let sy = 0; sy < R; sy++) {
           for (let sx = 0; sx < R; sx++) {
             const x = tx + (sx + 0.5) / R;
@@ -161,7 +171,8 @@ export class LevelTextures {
             distData[o] = encode(nearest(walls, src.w, src.h, x, y, tx, ty, 1));
             distData[o + 1] = encode(nearest(pits, src.w, src.h, x, y, tx, ty, 0));
             distData[o + 2] = inWater ? encode(nearest(dry, src.w, src.h, x, y, tx, ty, 1)) : 0;
-            distData[o + 3] = 255;
+            const siltEdge = inSilt ? -nearest(bare, src.w, src.h, x, y, tx, ty, 0) : nearest(silt, src.w, src.h, x, y, tx, ty, 0);
+            distData[o + 3] = encode(0.5 + siltEdge * 0.5);
           }
         }
       }

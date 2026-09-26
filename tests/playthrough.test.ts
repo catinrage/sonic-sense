@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { LEVELS } from "../src/game/levels";
 import type { World } from "../src/game/world";
 import { Bot } from "./bot";
+import type { Warden } from "../src/game/entities/warden";
 
 const level = (id: string) => LEVELS.find((l) => l.id === id)!;
 const doorOpen = (w: World, tx: number, ty: number) => w.doorOpen[ty * w.w + tx]! >= 0.9;
@@ -31,12 +32,17 @@ describe("playthroughs", () => {
     expect(bot.finished).toBe(true);
   });
 
-  test("IV The Listener — look from afar, then creep past the guard", () => {
+  test("IV The Listener — time its beat, creep past behind it", () => {
     const bot = new Bot(level("the-listener"));
-    bot.go(11, 10).call(0.2);
+    const guard = bot.world.wardens[0]!;
+    const eastbound = (w: Warden) => Math.cos(w.heading) > 0.5;
+    const westbound = (w: Warden) => Math.cos(w.heading) < -0.5;
+    bot.go(9, 10, { sneak: true });
+    bot.waitUntil("the listener walking east, away", () => eastbound(guard) && guard.x > 20, 60);
     bot.go(13, 6, { sneak: true }).go(19, 3, { sneak: true }).note("shard");
+    bot.waitUntil("the listener at the west end of its beat", () => westbound(guard) && guard.x < 16, 60);
     bot.go(32, 10, { sneak: true });
-    expect(bot.world.wardens[0]!.state).toBe("idle");
+    expect(["idle", "patrol"]).toContain(guard.state);
     expect(bot.finished).toBe(true);
   });
 
@@ -66,12 +72,16 @@ describe("playthroughs", () => {
   test("VII The Deep Gate — three wings, three shards", () => {
     const bot = new Bot(level("deep-gate"));
     const east = () => bot.world.wardens.find((h) => h.x > 32 && h.y > 10)!;
+    const vaultGuard = bot.world.wardens.find((h) => h.y < 9)!;
     // West: the chasm bridge.
     bot.go(4, 14, { sneak: true }).note("west shard");
-    // North: relay a call through the crystal to open the vault, then creep past its guard.
+    // North: relay a call through the crystal to open the vault, then creep in while its guard paces away.
     bot.go(15, 6).call(0.8);
     bot.waitUntil("vault door", (w) => doorOpen(w, 28, 6), 6);
-    bot.go(34, 4, { sneak: true }).note("north shard").go(18, 11, { sneak: true });
+    bot.waitUntil("the vault guard at the far corner", () => vaultGuard.x < 31.5 && vaultGuard.y > 8.5, 40);
+    bot.go(34, 4, { sneak: true }).note("north shard");
+    bot.waitUntil("the vault guard back at its post", () => vaultGuard.x > 33.5 && vaultGuard.state === "idle", 40);
+    bot.go(18, 11, { sneak: true });
     // East: wait for the patrol to reach the far end, wade along the south edge.
     bot.go(32, 16);
     bot.waitUntil("east patrol at the far end", () => east().x > 41.5 && east().state === "idle", 40);

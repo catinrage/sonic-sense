@@ -45,9 +45,9 @@
 
       <!-- Chapters -->
       <section id="chapters" class="screen screen--panel" aria-label="Chapters" hidden>
-        <div class="panel">
+        <div class="panel panel--wide">
           <p class="eyebrow">Chapters</p>
-          <div class="chapter-grid" data-bind="chapter-grid"></div>
+          <div class="chapter-acts" data-bind="chapter-acts"></div>
           <button class="text-button" data-action="back">Back</button>
         </div>
       </section>
@@ -74,6 +74,7 @@
         <div class="hud-inventory">
           <div class="hud-shards" data-bind="hud-shards" aria-label="Echo shards"></div>
           <div class="hud-stones" data-bind="hud-stones" aria-label="Stones"></div>
+          <div class="hud-abilities" data-bind="hud-abilities" aria-label="Abilities" hidden></div>
         </div>
         <p class="hud-hint" data-bind="hud-hint"></p>
         <p class="hud-keys"><kbd class="kbd-wide">Space</kbd> call <kbd>Shift</kbd> sneak <kbd>Click</kbd> throw <kbd>R</kbd> retry <kbd>Esc</kbd> pause</p>
@@ -84,6 +85,7 @@
         <p class="card-chapter" data-bind="card-chapter"></p>
         <h2 class="card-title" data-bind="card-title"></h2>
         <p class="card-tagline" data-bind="card-tagline"></p>
+        <p class="card-grant" data-bind="card-grant" hidden></p>
       </section>
 
       <!-- Death / completion message -->
@@ -108,13 +110,12 @@
       <!-- Ending -->
       <section id="ending" class="screen screen--ending" aria-label="Ending" hidden>
         <div class="ending-block">
-          <p class="eyebrow">Epilogue</p>
-          <h2 class="ending-title">Out of the Dark</h2>
-          <p class="ending-text">
-            The last gate hums behind you. Somewhere above, the world is loud and bright &mdash; and you will never
-            again mistake silence for emptiness.
-          </p>
-          <button class="menu-item" data-action="title"><span class="menu-ring"></span><span class="menu-label">Return to title</span></button>
+          <p class="eyebrow" data-bind="ending-eyebrow"></p>
+          <h2 class="ending-title" data-bind="ending-title"></h2>
+          <p class="ending-text" data-bind="ending-text"></p>
+          <button class="menu-item" data-bind="ending-action" data-action="title">
+            <span class="menu-ring"></span><span class="menu-label" data-bind="ending-action-label"></span>
+          </button>
         </div>
       </section>
 

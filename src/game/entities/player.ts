@@ -1,7 +1,8 @@
-import { angleDiff, clamp, damp, dampAngle, lerp } from "../../core/math";
+import { angleDiff, clamp, damp, dampAngle, type Vec2 } from "../../core/math";
 import { fxRng } from "../../core/rng";
 import { moveCircle } from "../collision";
 import { TILE } from "../level-types";
+import { callProfile, focusProfile } from "../calls";
 import { COLORS } from "../palette";
 import type { Wave } from "../waves";
 import type { World } from "../world";
@@ -15,9 +16,37 @@ export interface PlayerIntent {
   throwPressed: boolean;
   aimX: number;
   aimY: number;
+  /** Focus: charge a narrow, quiet call aimed at (aimX, aimY). */
+  focusHeld: boolean;
+  focusReleased: boolean;
+  /** Muffle: silence the creature's footfalls for a few seconds. */
+  mufflePressed: boolean;
 }
 
+/** No input at all. */
+export const IDLE_INTENT: Readonly<PlayerIntent> = {
+  moveX: 0,
+  moveY: 0,
+  sneak: false,
+  pulseHeld: false,
+  pulseReleased: false,
+  throwPressed: false,
+  aimX: 0,
+  aimY: 0,
+  focusHeld: false,
+  focusReleased: false,
+  mufflePressed: false,
+};
+
 export const MAX_STONES = 3;
+/** How far (tiles) a creeping footfall carries to a listening hunter. */
+export const SNEAK_LOUDNESS = 1.5;
+/** Seconds of stillness before Deep Listen starts, and to reach full depth. */
+const LISTEN_DELAY = 0.5;
+const LISTEN_RISE = 1.2;
+export const MUFFLE_TIME = 4;
+/** Measured from activation, so it includes the muffled seconds. */
+export const MUFFLE_COOLDOWN = 14;
 const WALK_SPEED = 3.3;
 const SNEAK_SPEED = 1.55;
 const CHARGE_TIME = 1.15;
@@ -33,6 +62,14 @@ export class Player {
   facing = 0;
   charge = 0;
   charging = false;
+  /** Which call is charging: an ordinary one, or a focused beam. */
+  chargeKind: "call" | "focus" = "call";
+  /** Deep Listen depth: 0 .. 1 while the creature stands still and silent. */
+  listen = 0;
+  private stillFor = 0;
+  /** Seconds of Muffle left, and until it can be used again. */
+  muffleLeft = 0;
+  muffleCooldown = 0;
   cooldown = 0;
   stones = 0;
   walkPhase = 0;
@@ -63,9 +100,15 @@ export class Player {
     this.stones = stones;
   }
 
+  /** Footfalls make no sound and no vibration (the Muffle ability). */
+  get muffled(): boolean {
+    return this.muffleLeft > 0;
+  }
+
   update(dt: number, intent: PlayerIntent, world: World): void {
     this.animateIdle(dt, world.time);
     if (this.dying) {
+      this.listen = 0;
       this.updateDeath(dt);
       return;
     }
@@ -74,8 +117,10 @@ export class Player {
       this.fade = this.entering;
     }
     this.cooldown = Math.max(0, this.cooldown - dt);
+    this.updateMuffle(dt, intent, world);
     this.updateCharge(dt, intent, world);
     this.updateMovement(dt, intent, world);
+    this.updateListen(dt, world);
     if (intent.throwPressed) this.tryThrow(intent, world);
     this.checkPit(world);
   }
@@ -118,11 +163,83 @@ export class Player {
   }
 
   private updateCharge(dt: number, intent: PlayerIntent, world: World): void {
-    if (intent.pulseHeld && !this.charging && this.cooldown <= 0) this.charging = true;
-    if (this.charging) {
-      this.charge = Math.min(1, this.charge + dt / CHARGE_TIME);
-      if (!intent.pulseHeld || intent.pulseReleased) this.releasePulse(world);
+    if (!this.charging && this.cooldown <= 0) {
+      if (intent.pulseHeld) this.beginCharge("call");
+      else if (intent.focusHeld && world.abilities.has("focus")) this.beginCharge("focus");
     }
+    if (!this.charging) return;
+    this.charge = Math.min(1, this.charge + dt / CHARGE_TIME);
+    const held = this.chargeKind === "call" ? intent.pulseHeld && !intent.pulseReleased : intent.focusHeld && !intent.focusReleased;
+    if (held) return;
+    if (this.chargeKind === "focus") this.releaseFocus(world, intent);
+    else this.releasePulse(world);
+  }
+
+  private beginCharge(kind: "call" | "focus"): void {
+    this.charging = true;
+    this.chargeKind = kind;
+  }
+
+  /** A focused call: a narrow beam towards the aim point, barely audible to creatures. */
+  private releaseFocus(world: World, intent: PlayerIntent): void {
+    const c = this.charge;
+    this.charging = false;
+    this.charge = 0;
+    this.cooldown = PULSE_COOLDOWN;
+    const aim = this.aimDirection(intent);
+    this.facing = Math.atan2(aim.y, aim.x);
+    const f = focusProfile(c);
+    world.emitSound({
+      kind: "pulse",
+      x: this.x,
+      y: this.y,
+      radius: f.radius,
+      loudness: f.loudness,
+      strength: f.strength,
+      speed: f.speed,
+      fade: f.fade,
+      color: COLORS.focus,
+      source: this,
+      alerts: true,
+      hits: true,
+      cone: { x: aim.x, y: aim.y, halfAngle: f.halfAngle },
+    });
+    world.events.emit("pulse", { x: this.x, y: this.y, charge: c, aim });
+  }
+
+  private aimDirection(intent: PlayerIntent): Vec2 {
+    const dx = intent.aimX - this.x;
+    const dy = intent.aimY - this.y;
+    const len = Math.hypot(dx, dy);
+    return len > 0.2 ? { x: dx / len, y: dy / len } : { x: Math.cos(this.facing), y: Math.sin(this.facing) };
+  }
+
+  /** Deep Listen deepens while the creature is still and silent, and breaks the moment it moves or calls. */
+  private updateListen(dt: number, world: World): void {
+    if (!world.abilities.has("deepListen")) {
+      this.listen = 0;
+      return;
+    }
+    const still = Math.hypot(this.vx, this.vy) < 0.15 && !this.charging;
+    this.stillFor = still ? this.stillFor + dt : 0;
+    this.listen = this.stillFor > LISTEN_DELAY ? Math.min(1, this.listen + dt / LISTEN_RISE) : Math.max(0, this.listen - dt * 4);
+    if (this.listen > 0.5) {
+      this.earTargetL = -0.35;
+      this.earTargetR = 0.35;
+      this.earHold = 0.2;
+    }
+  }
+
+  private updateMuffle(dt: number, intent: PlayerIntent, world: World): void {
+    this.muffleCooldown = Math.max(0, this.muffleCooldown - dt);
+    if (this.muffleLeft > 0) {
+      this.muffleLeft = Math.max(0, this.muffleLeft - dt);
+      if (this.muffleLeft === 0) world.events.emit("muffle", { on: false, x: this.x, y: this.y });
+    }
+    if (!intent.mufflePressed || this.muffleCooldown > 0 || !world.abilities.has("muffle")) return;
+    this.muffleLeft = MUFFLE_TIME;
+    this.muffleCooldown = MUFFLE_COOLDOWN;
+    world.events.emit("muffle", { on: true, x: this.x, y: this.y });
   }
 
   private releasePulse(world: World): void {
@@ -130,22 +247,22 @@ export class Player {
     this.charging = false;
     this.charge = 0;
     this.cooldown = PULSE_COOLDOWN;
-    const radius = lerp(5.5, 15, c * c * 0.35 + c * 0.65);
+    const call = callProfile(c);
     world.emitSound({
       kind: "pulse",
       x: this.x,
       y: this.y,
-      radius,
-      loudness: radius * 1.05,
-      strength: lerp(0.9, 1.25, c),
-      speed: lerp(8.5, 11, c),
-      fade: lerp(2.6, 4.4, c),
+      radius: call.radius,
+      loudness: call.loudness,
+      strength: call.strength,
+      speed: call.speed,
+      fade: call.fade,
       color: COLORS.pulse,
       source: this,
       alerts: true,
       hits: true,
     });
-    world.events.emit("pulse", { x: this.x, y: this.y, charge: c });
+    world.events.emit("pulse", { x: this.x, y: this.y, charge: c, aim: null });
   }
 
   private updateMovement(dt: number, intent: PlayerIntent, world: World): void {
@@ -179,11 +296,28 @@ export class Player {
 
   private footstep(world: World, sneaking: boolean): void {
     this.stepSide = -this.stepSide;
+    if (this.muffled) return;
     const side = this.stepSide * 0.1;
     const fx = this.x + Math.cos(this.facing + Math.PI / 2) * side;
     const fy = this.y + Math.sin(this.facing + Math.PI / 2) * side;
-    const water = world.tileAtPos(this.x, this.y) === TILE.Water;
-    if (water) {
+    const tile = world.tileAtPos(this.x, this.y);
+    const water = tile === TILE.Water;
+    const silt = tile === TILE.Silt;
+    if (silt) {
+      // Soft ground swallows the footfall: nothing hears it, and it shows almost nothing.
+      world.emitSound({
+        kind: "step",
+        x: fx,
+        y: fy,
+        radius: 0.8,
+        loudness: 0,
+        strength: 0.14,
+        speed: 3,
+        fade: 0.6,
+        color: COLORS.sneak,
+        source: this,
+      });
+    } else if (water) {
       world.emitSound({
         kind: "splash",
         x: fx,
@@ -198,17 +332,19 @@ export class Player {
         alerts: true,
       });
     } else if (sneaking) {
+      // Quiet, not silent: a hunter close enough to touch still hears it.
       world.emitSound({
         kind: "step",
         x: fx,
         y: fy,
         radius: 1.05,
-        loudness: 0,
+        loudness: SNEAK_LOUDNESS,
         strength: 0.22,
         speed: 4,
         fade: 0.8,
         color: COLORS.sneak,
         source: this,
+        alerts: true,
       });
     } else {
       world.emitSound({
@@ -225,7 +361,7 @@ export class Player {
         alerts: true,
       });
     }
-    world.events.emit("step", { x: fx, y: fy, water, sneak: sneaking });
+    world.events.emit("step", { x: fx, y: fy, water, silt, sneak: sneaking });
   }
 
   private tryThrow(intent: PlayerIntent, world: World): void {

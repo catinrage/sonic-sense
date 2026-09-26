@@ -4,23 +4,15 @@ import { LevelTextures } from "../render/level-textures";
 import type { FrameView, PostParams, Renderer } from "../render/renderer";
 import { BASE_VIEW_HEIGHT, Camera } from "./camera";
 import { Effects } from "./effects";
-import type { PlayerIntent } from "./entities/player";
+import { LISTEN_GAIN } from "./calls";
+import { MIN_WIND_FACTOR } from "./geodesic";
+import { IDLE_INTENT, type PlayerIntent } from "./entities/player";
 import { parseLevel } from "./level-parser";
 import type { LevelDef } from "./level-types";
 import { Particles } from "./particles";
 import { SceneBuilder } from "./scene-builder";
 import { World } from "./world";
 
-const IDLE_INTENT: PlayerIntent = {
-  moveX: 0,
-  moveY: 0,
-  sneak: false,
-  pulseHeld: false,
-  pulseReleased: false,
-  throwPressed: false,
-  aimX: 0,
-  aimY: 0,
-};
 
 /** Owns the live world, camera, effects and the per-frame render view. */
 export class Stage {
@@ -92,6 +84,9 @@ export class Stage {
       throwPressed: input.pressed("throw"),
       aimX: input.mouseInside ? aim.x : this.world.player.x + Math.cos(this.world.player.facing) * 4,
       aimY: input.mouseInside ? aim.y : this.world.player.y + Math.sin(this.world.player.facing) * 4,
+      focusHeld: input.isDown("focus"),
+      focusReleased: input.released("focus"),
+      mufflePressed: input.pressed("muffle"),
     };
   }
 
@@ -161,6 +156,8 @@ export class Stage {
       dt,
       camera: this.camera.view(),
       waves: world.waves.waves,
+      waveReach: world.soundGrid.hasWind ? 1 / MIN_WIND_FACTOR : 1,
+      listenGain: 1 + (LISTEN_GAIN - 1) * world.player.listen,
       player: { x: p.x, y: p.y, charge: p.charge, alive: p.dying ? 0 : 1 },
       entities: this.builder.build(world, this.aim),
       particles: this.particles.batch(),

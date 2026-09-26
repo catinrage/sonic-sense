@@ -213,21 +213,38 @@ void main() {
 
 /** Additive halo drawn under the player: charge ring and faint aura. uP[0]: charge, time, sneak, alpha. */
 export const AURA_FS = /* glsl */ `${ENTITY_PRELUDE}
+// uP[0]: charge, time, sneak, alpha. uP[1]: listen, muffled, focusing, aim angle.
 void main() {
   vec2 p = vLocal;
   float ch = uP[0].x;
   float time = uP[0].y;
   float alpha = uP[0].w;
+  float listen = uP[1].x;
+  float muffled = uP[1].y;
+  float focusing = uP[1].z;
+  float aimAng = uP[1].w;
   float r = length(p);
   vec3 col = vec3(0.3, 0.9, 1.0);
   float aura = exp(-r * r * 18.0) * 0.05 * (1.0 - uP[0].z * 0.7);
   float ringR = 0.42 + ch * 0.18;
-  float ring = exp(-pow((r - ringR) / 0.012, 2.0)) * ch;
   float ang = atan(p.y, p.x);
+  // A focused call gathers into a wedge pointing where it will fly.
+  float rel = abs(mod(ang - aimAng + PI, TAU) - PI);
+  float wedge = mix(1.0, 1.0 - smoothstep(0.3, 0.42, rel), focusing);
+  float ring = exp(-pow((r - ringR) / 0.012, 2.0)) * ch * wedge;
   float arc = step(fract(ang / TAU + 0.5), ch);
-  float ticks = step(0.5, fract(ang / TAU * 24.0 - time * 0.5)) * exp(-pow((r - ringR - 0.05) / 0.008, 2.0)) * ch * 0.6;
-  float inner = exp(-pow((r - ringR * 0.8 + fract(time * 1.5) * 0.15) / 0.02, 2.0)) * ch * 0.4;
-  vec3 c = col * (aura + ring * (0.5 + arc * 1.5) + ticks + inner);
+  float ticks = step(0.5, fract(ang / TAU * 24.0 - time * 0.5)) * exp(-pow((r - ringR - 0.05) / 0.008, 2.0)) * ch * 0.6 * wedge;
+  float inner = exp(-pow((r - ringR * 0.8 + fract(time * 1.5) * 0.15) / 0.02, 2.0)) * ch * 0.4 * wedge;
+  float beam = focusing * ch * (1.0 - smoothstep(0.05, 0.3, rel)) * smoothstep(0.1, 0.25, r) * exp(-r * 2.5) * 0.9;
+  vec3 c = col * (aura + ring * (0.5 + arc * 1.5) + ticks + inner + beam);
+  // Deep Listen: faint rings drawing inward, the world's sound arriving.
+  for (int k = 0; k < 3 + LOOP_ZERO; k++) {
+    float rr = 0.72 * (1.0 - fract(time * 0.35 + float(k) / 3.0));
+    c += vec3(0.62, 0.8, 1.0) * exp(-pow((r - rr) / 0.01, 2.0)) * listen * smoothstep(0.0, 0.2, rr) * 0.35;
+  }
+  // Muffle: a hushed, slowly turning dotted ring.
+  float dots = step(0.55, fract(ang / TAU * 16.0 + time * 0.15));
+  c += vec3(0.4, 0.55, 0.9) * exp(-pow((r - 0.34) / 0.014, 2.0)) * dots * muffled * 0.6;
   outColor = vec4(c * alpha, 0.0);
 }
 `;

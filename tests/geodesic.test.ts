@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { FieldJob, SoundGrid, UNREACHED, diffractionLoss, type FieldSample } from "../src/game/geodesic";
+import { FIELD_RES, FieldJob, SoundGrid, UNREACHED, diffractionLoss, type FieldSample } from "../src/game/geodesic";
 
 function gridFrom(rows: string[]): SoundGrid {
   const h = rows.length;
@@ -11,7 +11,7 @@ function gridFrom(rows: string[]): SoundGrid {
   return grid;
 }
 
-const sample = (job: FieldJob, x: number, y: number): FieldSample => job.sample(x, y, { d: 0, e: 0 });
+const sample = (job: FieldJob, x: number, y: number): FieldSample => job.sample(x, y, { d: 0, e: 0, dx: 0, dy: 0 });
 
 describe("SoundGrid.lineOfSight", () => {
   const grid = gridFrom(["#####", "#...#", "#.#.#", "#...#", "#####"]);
@@ -102,5 +102,48 @@ describe("diffractionLoss", () => {
     expect(diffractionLoss(1)).toBeCloseTo(1, 5);
     expect(diffractionLoss(0)).toBeLessThan(0.6);
     expect(diffractionLoss(-1)).toBeGreaterThan(0.3);
+  });
+});
+
+describe("directional emitters", () => {
+  const open = gridFrom(["#################", ...Array(13).fill("#...............#"), "#################"]);
+  const beam = { x: 1, y: 0, halfAngle: 0.5 };
+
+  test("launch energy only inside their beam", () => {
+    const job = new FieldJob(open, 8.5, 7.5, 12, false, beam);
+    job.advance(Infinity);
+    expect(sample(job, 13.5, 7.5).e).toBeCloseTo(1, 2);
+    expect(sample(job, 12.5, 9.0).e).toBeGreaterThan(0.9);
+    expect(sample(job, 3.5, 7.5).e).toBeLessThan(1e-3);
+    expect(sample(job, 8.5, 12.5).e).toBeLessThan(1e-3);
+  });
+
+  test("keep their beam's energy as it bends around a corner", () => {
+    const grid = gridFrom(["##########", "#........#", "#######..#", "#......#.#", "#......#.#", "##########"]);
+    const job = new FieldJob(grid, 1.5, 1.5, 20, false, beam);
+    job.advance(Infinity);
+    expect(sample(job, 8.5, 4.5).e).toBeGreaterThan(0.2);
+  });
+
+  test("samples report the direction sound travels", () => {
+    const job = new FieldJob(open, 8.5, 7.5, 12);
+    job.advance(Infinity);
+    const s = sample(job, 8.5, 3.5);
+    expect(s.dx).toBeCloseTo(0, 2);
+    expect(s.dy).toBeCloseTo(-1, 2);
+  });
+});
+
+describe("wall soak", () => {
+  test("does not squeeze diagonally through a concave corner", () => {
+    // A one-tile pocket: the wall cell diagonally past its corner must be reached through a side.
+    const grid = gridFrom(["####", "#.##", "####"]);
+    const job = new FieldJob(grid, 1.5, 1.5, 4);
+    job.advance(Infinity);
+    const at = (gx: number, gy: number) => job.data[((gy - job.y0) * job.bw + (gx - job.x0)) * 4]!;
+    const corner = at(7, 7);
+    const beyond = at(8, 8);
+    // Not the direct diagonal step from the corner cell (a squeeze through the shared vertex).
+    expect(beyond).toBeGreaterThan(corner + Math.SQRT2 / FIELD_RES + 0.05);
   });
 });

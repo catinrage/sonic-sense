@@ -62,6 +62,10 @@ export interface FrameView {
   dt: number;
   camera: CameraView;
   waves: readonly Wave[];
+  /** How far past its radius a wave can reach (drafts carry sound downwind); 1 in still air. */
+  waveReach: number;
+  /** Visual radius multiplier for sounds the player did not make (Deep Listen); 1 normally. */
+  listenGain: number;
   player: { x: number; y: number; charge: number; alive: number };
   entities: readonly EntityDraw[];
   particles: ParticleBatch;
@@ -353,7 +357,7 @@ export class Renderer {
     d.set([cam.height, view.time, level.w, level.h], 4);
     const waves = view.waves.filter((w) => w.layer >= 0);
     const count = Math.min(waves.length, MAX_WAVES);
-    d.set([count, FIELD_RES, (halfH * 2) / this.height, 0], 8);
+    d.set([count, view.waveReach, (halfH * 2) / this.height, 0], 8);
     d.set([view.player.x, view.player.y, view.player.charge, view.player.alive], 12);
     const baseA = 16;
     const baseB = baseA + MAX_WAVES * 4;
@@ -362,7 +366,10 @@ export class Renderer {
       const w = waves[i]!;
       const age = Math.max(0, view.time - w.t0);
       d.set([w.x, w.y, age, w.speed], baseA + i * 4);
-      d.set([w.radius, w.strength * w.glow, w.layer, WAVE_KIND_ID[w.kind]], baseB + i * 4);
+      // Deep Listen: the world's sounds carry further and ring brighter; the creature's own do not.
+      const radius = w.own ? w.radius : w.radius * view.listenGain;
+      const strength = w.own ? w.strength : w.strength * (1 + (view.listenGain - 1) * 0.35);
+      d.set([radius, strength * w.glow, w.layer, WAVE_KIND_ID[w.kind]], baseB + i * 4);
       d.set([w.color[0], w.color[1], w.color[2], w.fade], baseC + i * 4);
     }
     gl.bindBuffer(gl.UNIFORM_BUFFER, this.ubo);

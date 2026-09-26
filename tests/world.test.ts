@@ -3,20 +3,11 @@ import { World } from "../src/game/world";
 import { parseLevel } from "../src/game/level-parser";
 import { LEVELS } from "../src/game/levels";
 import type { LevelDef } from "../src/game/level-types";
-import type { PlayerIntent } from "../src/game/entities/player";
+import { IDLE_INTENT, SNEAK_LOUDNESS, type PlayerIntent } from "../src/game/entities/player";
 import { TILE } from "../src/game/level-types";
 import { MAX_WAVES } from "../src/game/waves";
 
-const IDLE: PlayerIntent = {
-  moveX: 0,
-  moveY: 0,
-  sneak: false,
-  pulseHeld: false,
-  pulseReleased: false,
-  throwPressed: false,
-  aimX: 0,
-  aimY: 0,
-};
+const IDLE: PlayerIntent = IDLE_INTENT;
 
 function worldOf(map: string[], legend?: LevelDef["legend"], stones = 0): World {
   return new World(parseLevel({ id: "t", chapter: "0", title: "t", tagline: "", map, legend, stones }));
@@ -60,12 +51,25 @@ describe("player", () => {
     expect(cause).toBe("pit");
   });
 
-  test("sneaking makes no creature-audible footsteps", () => {
+  test("sneaking is quiet, not silent: only a hunter within reach hears it", () => {
     const world = worldOf(["###########", "#.........#", "#.@.......#", "#.........#", "###########"]);
     run(world, 1.5, { moveX: 1, sneak: true });
-    expect(world.waves.waves.every((w) => !w.alerts)).toBe(true);
+    const creeping = world.waves.waves.filter((w) => w.kind === "step");
+    expect(creeping.length).toBeGreaterThan(0);
+    expect(creeping.every((w) => w.loudness === SNEAK_LOUDNESS)).toBe(true);
     run(world, 1.5, { moveX: -1 });
-    expect(world.waves.waves.some((w) => w.kind === "step" && w.alerts)).toBe(true);
+    const walking = world.waves.waves.filter((w) => w.kind === "step" && w.loudness > SNEAK_LOUDNESS);
+    expect(walking.length).toBeGreaterThan(0);
+    expect(walking.every((w) => w.loudness >= 2 * SNEAK_LOUDNESS)).toBe(true);
+  });
+
+  test("a hunter hears a creeping step only up close", () => {
+    const near = worldOf(["###########", "#.........#", "#.@..W....#", "#.........#", "###########"]);
+    run(near, 1.45, { moveX: 1, sneak: true });
+    expect(["alert", "hunt", "search"]).toContain(near.wardens[0]!.state);
+    const far = worldOf(["###############", "#.............#", "#.@.........W.#", "#.............#", "###############"]);
+    run(far, 1.2, { moveX: 1, sneak: true });
+    expect(["idle", "patrol"]).toContain(far.wardens[0]!.state);
   });
 });
 

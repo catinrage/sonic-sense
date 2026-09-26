@@ -1,5 +1,6 @@
-import { clamp, damp } from "../../core/math";
-import { fxRng, hash2 } from "../../core/rng";
+import { clamp, damp, type Vec2 } from "../../core/math";
+import { CRYSTAL_SONG, CRYSTAL_TRIGGER, RESONATOR_SONG } from "../calls";
+import { fxRng, hash2, Rng, seedFor } from "../../core/rng";
 import type { FieldSample } from "../geodesic";
 import { COLORS } from "../palette";
 import type { Wave } from "../waves";
@@ -12,8 +13,10 @@ export interface Listener {
   hear(wave: Wave, sample: FieldSample, world: World): void;
 }
 
-const CRYSTAL_THRESHOLD = 0.1;
 const GRAVITY = 22;
+/** Lure Stone: chirps a resting stone makes, and the pause between them. */
+export const LURE_CHIRPS = 10;
+const LURE_PERIOD = 1.1;
 
 /** Resonance crystal: re-emits a violet wave when struck by sound. Loud — creatures hear it. */
 export class Crystal implements Listener {
@@ -27,6 +30,8 @@ export class Crystal implements Listener {
   constructor(
     readonly x: number,
     readonly y: number,
+    /** A resonator's beam direction: its dish sends the song one way only. */
+    readonly beam: Vec2 | null = null,
   ) {
     this.seed = hash2(Math.floor(x), Math.floor(y), 71);
     this.pitch = Math.floor(this.seed * 5);
@@ -34,7 +39,7 @@ export class Crystal implements Listener {
 
   hear(wave: Wave, sample: FieldSample): void {
     if (wave.source === this || this.cooldown > 0 || this.pending >= 0) return;
-    if (wave.energyAt(sample) < CRYSTAL_THRESHOLD) return;
+    if (wave.energyAt(sample) < CRYSTAL_TRIGGER) return;
     this.pending = 0.18;
     this.shake = 1;
   }
@@ -50,22 +55,25 @@ export class Crystal implements Listener {
     this.pending = -1;
     this.cooldown = 2.4;
     this.glow = 1;
+    const { beam } = this;
+    const song = beam ? RESONATOR_SONG : CRYSTAL_SONG;
     world.emitSound({
       kind: "crystal",
       x: this.x,
       y: this.y,
-      radius: 8.5,
-      loudness: 10,
-      strength: 0.95,
-      speed: 8,
+      radius: song.radius,
+      loudness: song.loudness,
+      strength: song.strength,
+      speed: beam ? 10 : 8,
       fade: 3.2,
       color: COLORS.crystal,
       source: this,
       alerts: true,
       hits: true,
       glow: 0.62,
+      cone: beam ? { x: beam.x, y: beam.y, halfAngle: RESONATOR_SONG.halfAngle } : undefined,
     });
-    world.events.emit("crystal", { x: this.x, y: this.y, pitch: this.pitch });
+    world.events.emit("crystal", { x: this.x, y: this.y, pitch: this.pitch, beam });
   }
 }
 
@@ -213,6 +221,9 @@ export class Stone {
   bounces = 0;
   spin = fxRng.range(0, Math.PI * 2);
   pickupDelay = 0.5;
+  /** Chirps left once it lands (the Lure Stone ability). */
+  lureLeft = 0;
+  private lureTimer = 0;
 
   constructor(
     public x: number,
@@ -229,7 +240,11 @@ export class Stone {
 
   update(dt: number, world: World): void {
     this.pickupDelay = Math.max(0, this.pickupDelay - dt);
-    if (this.resting || this.lost) return;
+    if (this.lost) return;
+    if (this.resting) {
+      this.chirp(dt, world);
+      return;
+    }
     this.spin += dt * Math.hypot(this.vx, this.vy) * 3;
     this.vz -= GRAVITY * dt;
     const nx = this.x + this.vx * dt;
@@ -256,7 +271,34 @@ export class Stone {
     if (impact < 2.2 || this.bounces >= 3) {
       this.resting = true;
       this.vx = this.vy = this.vz = 0;
+      if (world.abilities.has("lureStone")) {
+        this.lureLeft = LURE_CHIRPS;
+        this.lureTimer = LURE_PERIOD * 0.6;
+      }
     }
+  }
+
+  /** A lure stone keeps calling where it lies: a decoy creatures come to investigate. */
+  private chirp(dt: number, world: World): void {
+    if (this.lureLeft <= 0) return;
+    this.lureTimer -= dt;
+    if (this.lureTimer > 0) return;
+    this.lureTimer = LURE_PERIOD;
+    this.lureLeft--;
+    world.emitSound({
+      kind: "lure",
+      x: this.x,
+      y: this.y,
+      radius: 3.2,
+      loudness: 9,
+      strength: 0.6,
+      speed: 7,
+      fade: 1.6,
+      color: COLORS.lure,
+      source: this,
+      alerts: true,
+    });
+    world.events.emit("lure", { x: this.x, y: this.y, left: this.lureLeft });
   }
 }
 
@@ -297,12 +339,14 @@ export class Drip {
   falling = -1;
   /** Seconds since the last drop landed. */
   since = 99;
+  private readonly rng: Rng;
 
   constructor(
     readonly x: number,
     readonly y: number,
   ) {
-    this.timer = fxRng.range(0.5, 4);
+    this.rng = new Rng(seedFor(x, y, 0xd41));
+    this.timer = this.rng.range(0.5, 4);
   }
 
   update(dt: number, world: World): void {
@@ -330,7 +374,7 @@ export class Drip {
     }
     this.timer -= dt;
     if (this.timer <= 0) {
-      this.timer = fxRng.range(2.8, 6.5);
+      this.timer = this.rng.range(2.8, 6.5);
       this.falling = 0;
     }
   }

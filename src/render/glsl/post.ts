@@ -146,7 +146,8 @@ void main() {
     float R = B.x;
     vec2 dp = p - A.xy;
     float lim = R + 1.5;
-    if (dot(dp, dp) > lim * lim) continue;
+    float reach = lim * WAVE_REACH;
+    if (dot(dp, dp) > reach * reach) continue;
     vec4 f = textureLod(uField, vec3(p / MAP_SIZE, B.z), 0.0);
     if (f.x > lim) continue;
     float r = A.z * A.w;

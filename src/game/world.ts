@@ -1,30 +1,38 @@
 import { Emitter } from "../core/events";
 import { clamp, dist, type Vec2 } from "../core/math";
-import { Rng } from "../core/rng";
+import { Rng, seedFor } from "../core/rng";
 import type { BlockQuery, CircleObstacle } from "./collision";
 import { Bell, Crystal, Drip, ExitGate, Mushroom, Shard, Stone, StonePile, type Listener } from "./entities/props";
 import { MAX_STONES, Player, type PlayerIntent } from "./entities/player";
+import { LISTEN_GAIN } from "./calls";
+import { Chime } from "./entities/chime";
 import { Warden } from "./entities/warden";
+import { creatureTraits, type CreatureKind } from "./entities/warden-traits";
 import { SoundGrid } from "./geodesic";
-import { TILE, type HintSpawn, type LevelData } from "./level-types";
+import { DECOR, TILE, type Ability, type HintSpawn, type LevelData } from "./level-types";
 import { COLORS } from "./palette";
 import type { WalkGrid } from "./pathfinding";
 import { WaveSystem, type Wave, type WaveSpec } from "./waves";
 
 export interface WorldEvents {
-  pulse: { x: number; y: number; charge: number };
-  step: { x: number; y: number; water: boolean; sneak: boolean };
+  pulse: { x: number; y: number; charge: number; aim: Vec2 | null };
+  muffle: { x: number; y: number; on: boolean };
+  lure: { x: number; y: number; left: number };
+  step: { x: number; y: number; water: boolean; silt: boolean; sneak: boolean };
   noStones: { x: number; y: number };
   throw: { x: number; y: number };
   stoneHit: { x: number; y: number; strength: number; water: boolean };
   stoneLost: { x: number; y: number };
   pickup: { x: number; y: number; stones: number };
-  crystal: { x: number; y: number; pitch: number };
+  crystal: { x: number; y: number; pitch: number; beam: Vec2 | null };
+  chime: { x: number; y: number; note: number };
   bell: { x: number; y: number; group: number };
   tick: { x: number; y: number; left: number };
   door: { x: number; y: number; open: boolean; group: number };
   wardenClick: { x: number; y: number };
-  wardenAlert: { x: number; y: number };
+  wardenAlert: { x: number; y: number; creature: CreatureKind };
+  sentinelCall: { x: number; y: number };
+  tremorThump: { x: number; y: number };
   shard: { x: number; y: number; got: number; total: number };
   exitAwake: { x: number; y: number };
   exitHum: { x: number; y: number; active: boolean };
@@ -46,6 +54,8 @@ export class World {
   readonly variant: Uint8Array;
   readonly decor: Uint8Array;
   readonly doorGroup: Int8Array;
+  /** Wind per tile (index into WIND_DIRS, -1 = still air). */
+  readonly wind: Int8Array;
   readonly doorOpen: Float32Array;
   readonly doorGlow: Float32Array;
   private readonly doorTarget: Float32Array;
@@ -53,6 +63,8 @@ export class World {
   readonly soundGrid: SoundGrid;
   readonly waves: WaveSystem;
   readonly events = new Emitter<WorldEvents>();
+  /** The kit this chapter is played with. */
+  readonly abilities: ReadonlySet<Ability>;
   time = 0;
 
   readonly player: Player;
@@ -64,6 +76,9 @@ export class World {
   readonly piles: StonePile[];
   readonly mushrooms: Mushroom[];
   readonly drips: Drip[];
+  readonly chimes: Chime[];
+  /** Centres of the moss-curtain tiles. */
+  readonly baffles: Vec2[] = [];
   readonly exit: ExitGate | null;
   readonly obstacles: CircleObstacle[];
   private readonly hints: (HintSpawn & { shown: boolean })[];
@@ -87,6 +102,7 @@ export class World {
     this.variant = level.variant;
     this.decor = level.decor;
     this.doorGroup = level.doorGroup;
+    this.wind = level.wind;
     const n = this.w * this.h;
     this.doorOpen = new Float32Array(n);
     this.doorGlow = new Float32Array(n);
@@ -94,13 +110,20 @@ export class World {
     this.propTile = new Uint8Array(n);
 
     this.player = new Player(level.player.x, level.player.y, level.def.stones ?? 0);
-    this.wardens = level.wardens.map((s) => new Warden(s.x, s.y, s.route, s.speed));
-    this.crystals = level.crystals.map((c) => new Crystal(c.x, c.y));
+    this.abilities = new Set(level.def.abilities ?? []);
+    this.wardens = level.wardens.map(
+      (s) => new Warden(s.x, s.y, s.route, creatureTraits(s.creature, { speedMul: s.speed }), seedFor(s.x, s.y, 0x5a1d)),
+    );
+    this.crystals = level.crystals.map((c) => new Crystal(c.x, c.y, c.facing));
     this.bells = level.bells.map((b) => new Bell(b.x, b.y, b.group, b.timed, b.threshold));
     this.shards = level.shards.map((s) => new Shard(s.x, s.y));
     this.piles = level.stonePiles.map((p) => new StonePile(p.x, p.y, 2));
     this.mushrooms = level.mushrooms.map((m) => new Mushroom(m.x, m.y));
     this.drips = level.drips.map((d) => new Drip(d.x, d.y));
+    this.chimes = level.chimes.map((c) => new Chime(c.x, c.y));
+    for (let i = 0; i < n; i++) {
+      if (this.decor[i]! & DECOR.Baffle) this.baffles.push({ x: (i % this.w) + 0.5, y: Math.floor(i / this.w) + 0.5 });
+    }
     this.exit = level.exit ? new ExitGate(level.exit.x, level.exit.y, level.shards.length > 0) : null;
     this.hints = level.hints.map((h) => ({ ...h, shown: false }));
     this.obstacles = [
@@ -113,6 +136,8 @@ export class World {
     this.walkGrid = { w: this.w, h: this.h, isWalkable: (tx, ty) => this.isWalkable(tx, ty) };
     this.soundGrid = new SoundGrid(this.w, this.h);
     this.soundGrid.setSolidTiles(this.soundMask());
+    this.soundGrid.setSiltTiles(this.tiles.map((t) => (t === TILE.Silt ? 1 : 0)));
+    this.soundGrid.setWind(level.wind);
     this.waves = new WaveSystem(this.soundGrid);
   }
 
@@ -158,7 +183,9 @@ export class World {
   }
 
   emitSound(spec: WaveSpec): Wave {
-    const wave = this.waves.emit(spec, this.time);
+    const own = spec.source === this.player;
+    const headroom = !own && this.abilities.has("deepListen") ? LISTEN_GAIN : 1;
+    const wave = this.waves.emit({ ...spec, own, revealHeadroom: headroom }, this.time);
     this.events.emit("wave", { wave });
     return wave;
   }
@@ -171,9 +198,16 @@ export class World {
   }
 
   stoneImpact(stone: Stone, impact: number): void {
-    const water = this.tileAtPos(stone.x, stone.y) === TILE.Water;
+    const tile = this.tileAtPos(stone.x, stone.y);
+    const water = tile === TILE.Water;
     const first = stone.bounces === 0;
     const strength = clamp(impact / 7, 0.35, 1);
+    if (tile === TILE.Silt) {
+      // Soft silt takes a falling stone without a sound: nothing hears it, and it shows almost nothing.
+      this.emitSound({ kind: "stone", x: stone.x, y: stone.y, radius: 1, loudness: 0, strength: 0.2, speed: 5, fade: 0.8, color: COLORS.stone, source: stone });
+      this.events.emit("stoneHit", { x: stone.x, y: stone.y, strength: 0.15, water: false });
+      return;
+    }
     this.emitSound({
       kind: "stone",
       x: stone.x,
@@ -208,6 +242,7 @@ export class World {
     for (const s of this.stones) s.update(dt, this);
     for (const w of this.wardens) w.update(dt, this);
     for (const c of this.crystals) c.update(dt, this);
+    for (const c of this.chimes) c.update(dt, this);
     for (const b of this.bells) b.update(dt, this);
     for (const s of this.shards) s.update(dt);
     for (const m of this.mushrooms) m.update(dt);
@@ -318,12 +353,16 @@ export class World {
     const mask = new Uint8Array(this.w * this.h);
     for (let i = 0; i < mask.length; i++) {
       const t = this.tiles[i];
-      mask[i] = t === TILE.Wall || (t === TILE.Door && this.doorOpen[i]! < 0.5) ? 1 : 0;
+      const baffle = (this.decor[i]! & DECOR.Baffle) !== 0;
+      mask[i] = t === TILE.Wall || baffle || (t === TILE.Door && this.doorOpen[i]! < 0.5) ? 1 : 0;
     }
     return mask;
   }
 
-  /** Air-borne dust positions (x, y, z, seed) spread over open floor. */
+  /**
+   * Air-borne dust positions (x, y, z, seed) spread over open floor. In a draft
+   * the seed's integer part is the wind index + 1, so the motes stream downwind.
+   */
   dustMotes(): Float32Array {
     const rng = new Rng(this.w * 131 + this.h * 7);
     const out: number[] = [];
@@ -331,10 +370,11 @@ export class World {
       for (let tx = 0; tx < this.w; tx++) {
         const t = this.tileAt(tx, ty);
         if (t === TILE.Wall) continue;
-        const count = t === TILE.Pit ? 3 : 2;
+        const wind = this.wind[ty * this.w + tx]!;
+        const count = t === TILE.Pit ? 3 : t === TILE.Draft ? 6 : 2;
         for (let k = 0; k < count; k++) {
-          const z = t === TILE.Pit ? rng.range(-1.5, 0.9) : rng.range(0.06, 1.0);
-          out.push(tx + rng.next(), ty + rng.next(), z, rng.next());
+          const z = t === TILE.Pit ? rng.range(-1.5, 0.9) : t === TILE.Draft ? rng.range(0.04, 0.6) : rng.range(0.06, 1.0);
+          out.push(tx + rng.next(), ty + rng.next(), z, rng.next() * 0.999 + (wind >= 0 ? wind + 1 : 0));
         }
       }
     }

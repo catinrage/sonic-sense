@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { LEVELS, SHOWCASE } from "../src/game/levels";
+import { DIORAMAS, LEVELS } from "../src/game/levels";
 import { parseLevel } from "../src/game/level-parser";
 import { checkLevel } from "../src/game/level-check";
-import { TILE } from "../src/game/level-types";
+import { TILE, type LevelDef } from "../src/game/level-types";
 
 describe("campaign levels", () => {
   for (const def of LEVELS) {
@@ -16,9 +16,11 @@ describe("campaign levels", () => {
     expect(new Set(LEVELS.map((l) => l.id)).size).toBe(LEVELS.length);
   });
 
-  test("the showcase diorama parses", () => {
-    expect(() => parseLevel(SHOWCASE)).not.toThrow();
-  });
+  for (const [id, def] of Object.entries(DIORAMAS)) {
+    test(`the ${id} diorama parses`, () => {
+      expect(() => parseLevel(def)).not.toThrow();
+    });
+  }
 });
 
 describe("puzzle intent", () => {
@@ -39,6 +41,38 @@ describe("puzzle intent", () => {
     const w = level.wardens[0]!;
     expect(w.x).toBeGreaterThan(level.player.x);
     expect(w.x).toBeLessThan(level.exit!.x);
+  });
+
+  const withKit = (id: string, abilities: LevelDef["abilities"]) => parseLevel({ ...LEVELS.find((l) => l.id === id)!, abilities });
+  const edited = (id: string, edit: (row: string) => string, legend?: LevelDef["legend"]) => {
+    const def = LEVELS.find((l) => l.id === id)!;
+    return parseLevel({ ...def, map: def.map.map(edit), legend: { ...def.legend, ...legend } });
+  };
+
+  test("the Breathing Halls' heavy bell needs Focus", () => {
+    expect(checkLevel(withKit("breathing-halls", ["deepListen"])).errors).toContain("exit is unreachable");
+  });
+
+  test("the Breathing Halls' far bell is reached only on the wind", () => {
+    const still = edited("breathing-halls", (row) => row.replace(/o>+o/, (m) => m.replace(/>/g, "o")));
+    expect(checkLevel(still).openedGroups).not.toContain(1);
+  });
+
+  test("the last chasm is crossed only by a dish that faces its bell", () => {
+    expect(checkLevel(byId("where-the-dark-breathes")).errors).toEqual([]);
+    const turned = edited("where-the-dark-breathes", (row) => row, { R: { kind: "resonator", facing: "e" } });
+    expect(checkLevel(turned).errors).toContain("exit is unreachable");
+    const plain = edited("where-the-dark-breathes", (row) => row.replace("R", "C"));
+    expect(checkLevel(plain).errors).toContain("exit is unreachable");
+  });
+
+  test("every Act II chapter declares its kit, and each kit only grows", () => {
+    const act2 = LEVELS.filter((l) => l.act === 2);
+    expect(act2.map((l) => l.chapter)).toEqual(["VIII", "IX", "X", "XI", "XII", "XIII", "XIV"]);
+    for (let i = 1; i < act2.length; i++) {
+      for (const a of act2[i - 1]!.abilities ?? []) expect(act2[i]!.abilities).toContain(a);
+    }
+    for (const l of act2) for (const g of l.grants ?? []) expect(l.abilities).toContain(g);
   });
 
   test("Still Water forces a crossing through water", () => {

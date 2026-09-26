@@ -16,7 +16,23 @@ describe("parseSave", () => {
   });
 
   test("keeps valid progress", () => {
-    const s = parseSave({ unlocked: 4, last: 3, volumes: { master: 0.5, sfx: 0.6, music: 0.1 }, shake: false, gentle: true });
-    expect(s).toEqual({ unlocked: 4, last: 3, volumes: { master: 0.5, sfx: 0.6, music: 0.1 }, shake: false, gentle: true });
+    const s = parseSave({ version: 2, unlocked: 4, last: 3, volumes: { master: 0.5, sfx: 0.6, music: 0.1 }, shake: false, gentle: true });
+    expect(s).toEqual({
+      version: 2,
+      unlocked: 4,
+      last: 3,
+      volumes: { master: 0.5, sfx: 0.6, music: 0.1 },
+      shake: false,
+      gentle: true,
+    });
+  });
+
+  test("opens Act II for version-1 saves that reached the Act I finale", () => {
+    expect(parseSave({ unlocked: 6, last: 0 }).unlocked).toBe(7);
+    expect(parseSave({ unlocked: 3, last: 3 }).unlocked).toBe(3);
+  });
+
+  test("does not bump current-version saves", () => {
+    expect(parseSave({ version: 2, unlocked: 6, last: 6 }).unlocked).toBe(6);
   });
 });

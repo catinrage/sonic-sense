@@ -9,7 +9,8 @@ is to make a sound: your call spreads out as a wave, bends around corners, and
 lights up whatever it touches — then the echo fades and the dark closes in again.
 
 Every sound is also a risk. Blind **Wardens** hunt by ear, and the louder you
-call, the further you are heard.
+call, the further you are heard. Fourteen chapters in two acts: the sunken
+temple, and then the breathing dark beneath it.
 
 ## Play
 
@@ -26,12 +27,15 @@ are panned to where they bounced.
 | --- | --- |
 | `W A S D` / arrows | Move (your footsteps quietly reveal the floor underfoot) |
 | `Space` (hold, release) | Call out — hold longer for a louder call that reaches further |
-| `Shift` | Sneak: silent, slow — and blind |
+| `Shift` | Sneak: quiet (only a hunter within arm's reach hears it), slow — and blind |
 | Left click / `E` | Throw a stone where the reticle shows |
+| `Q` (hold, release) | **Focus** (Act II): a narrow call aimed at the pointer |
+| `F` | **Muffle** (Act II): silence your footfalls for a few seconds |
 | `R` | Restart the chapter |
 | `Esc` / `P` | Pause |
 
-A gamepad also works (stick to move, A to call, B/RT to throw, LB/LT to sneak).
+A gamepad also works (stick to move, A to call, B/RT to throw, LB/LT to sneak,
+X to focus, RB to muffle).
 
 ## The rules of the dark
 
@@ -47,10 +51,31 @@ A gamepad also works (stick to move, A to call, B/RT to throw, LB/LT to sneak).
   Some doors only stay open for a few seconds.
 - **Wardens** click to find their way (you will see them in red). They hunt the
   source of anything they hear — calls, footsteps, splashes, clattering stones.
-  Water betrays every step, even when sneaking.
+  Water betrays every step, even when sneaking. Hunters are nearly as fast as
+  you are: once one has heard you, running rarely saves you.
 
-Seven chapters teach and then combine these ideas. Progress and settings are
-saved in the browser.
+### Act II — The Breathing Dark
+
+Below the temple the rules bend. Each chapter declares the abilities it is
+played with, and grants at most one new one:
+
+- **Silt** swallows footsteps — and drinks the sound that crosses it, so the
+  safest ground is also the blindest. A stone falls on it without a sound.
+- **Drafts** carry sound further downwind and cut it short upwind; you can see
+  the wind bend every wavefront. **Wind chimes** hung in a draft ring on their
+  own: a light you cannot silence, and a lure you did not choose.
+- **Moss curtains** can be walked through, but sound cannot pass them.
+- **Resonator dishes** are crystals backed by a reflector: they sing in one
+  direction only, and much further.
+- **Tremors** are deaf — call as much as you like — but feel every step through
+  the floor. **The Chorus** hunts as a pack: wake one and all come. **Sentinels**
+  never move; they call on their own (their voice lights the hall for you) and
+  scream for help. **Stalkers** are slow and never, ever give up.
+- **Deep Listen** — stand still, and the world's own sounds reveal far more.
+  **Focus** — a narrow, quiet call that strikes harder. **Lure Stone** — thrown
+  stones keep chirping where they land. **Muffle** — a few silent seconds.
+
+Progress and settings are saved in the browser.
 
 ## Scripts
 
@@ -74,6 +99,14 @@ Each cell also stores the direction of travel and an energy term that falls off
 as the wave diffracts into shadow. Big fields are solved progressively, just
 ahead of the visible front. The same fields drive gameplay: creatures, crystals
 and bells react exactly when the visible front reaches them.
+
+Terrain bends the metric. Silt adds an absorption term integrated along each
+segment. Drafts make travel cost directional — `1 − 0.35·cos(angle to the wind)`
+per tile — so every straight segment is traced tile by tile for its exact wind
+integral, and because cost now varies, a path bent at a cell is compared against
+the straight one even with a clear line of sight (sound refracts into a draft).
+Directional emitters (resonators, the focused call) gate energy by the direction
+each cell's sound first left the source, carried along the virtual-source chain.
 
 **Rendering** (`src/render`, WebGL2). All fields live in one texture array.
 A full-screen raycaster marches each pixel through the tile height field, so
@@ -126,6 +159,10 @@ effects with `eleven_text_to_sound_v2`, and the title score with
 One-shots are mono and peak-normalized so the per-sound gains in `sounds.ts`
 set the balance; the two loops stay stereo and sit well below them.
 
+The Act II sounds — sentinel calls, tremor footfalls, wind chimes, the focused
+call, Muffle, lure chirps, soft steps on silt and the wind bed that swells in
+drafts — are synthesized; no samples exist for them yet.
+
 **Still synthesized on purpose.** The call (`pulse`) and the footsteps on stone
 and in water sounded better procedural in play-testing, so no sample ships for
 them. The call especially benefits: each echo tap is re-rendered at its own
@@ -150,8 +187,24 @@ tests/                 Solver, level solvability, simulation, scripted playthrou
 tools/                 Screenshot harness and level analysis
 ```
 
-Levels are ASCII maps (`src/game/levels`). `bun test` checks every chapter two
-ways: a static solver proves each one is solvable (including doors that only
-open when sound is relayed through crystals), and a scripted bot plays each
-chapter start to finish through the real simulation — luring, sneaking past and
-timing its way around the Wardens exactly as a player would.
+Levels are ASCII maps (`src/game/levels`):
+
+| Char | Meaning | Char | Meaning |
+| --- | --- | --- | --- |
+| `#` | Wall | `.` `,` `"` | Floor (plain, rubble, moss) |
+| `@` | Start | `X` | The Gate |
+| `*` | Echo Shard | `o` | Chasm |
+| `~` | Water | `:` | Silt |
+| `>` `<` `v` `^` | Draft (blowing that way) | `%` | Moss curtain |
+| `&` | Wind chime | `C` | Resonance crystal |
+| `W` | Warden | `s` `m` `d` | Stone pile, glow-caps, drip |
+| `1`–`9` | Door of that group | other | Legend: bells, hints, waypoints, creatures, resonators |
+
+`bun test` checks every chapter two ways. A static solver proves each one is
+solvable with exactly the abilities it declares — including doors opened by
+sound relayed through crystals and aimed resonators, and bells reached only on
+the wind (it solves each field backwards from the target with the wind negated;
+directional cost is antisymmetric, so that yields the forward costs exactly).
+And a scripted bot plays the chapters start to finish through the real
+simulation — luring, sneaking past and timing its way around the creatures
+exactly as a player would.

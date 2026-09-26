@@ -1,21 +1,12 @@
 import { World } from "../src/game/world";
 import { parseLevel } from "../src/game/level-parser";
 import { findPath } from "../src/game/pathfinding";
-import type { PlayerIntent } from "../src/game/entities/player";
+import { IDLE_INTENT, type PlayerIntent } from "../src/game/entities/player";
 import type { LevelDef } from "../src/game/level-types";
 
 const DT = 1 / 60;
 
-const IDLE: PlayerIntent = {
-  moveX: 0,
-  moveY: 0,
-  sneak: false,
-  pulseHeld: false,
-  pulseReleased: false,
-  throwPressed: false,
-  aimX: 0,
-  aimY: 0,
-};
+const IDLE: PlayerIntent = IDLE_INTENT;
 
 export interface GoOptions {
   sneak?: boolean;
@@ -93,6 +84,19 @@ export class Bot {
   call(hold: number): this {
     for (let t = 0; t < hold; t += DT) this.step({ pulseHeld: true });
     this.step({ pulseReleased: true });
+    return this;
+  }
+
+  /** Gather a focused call for `hold` seconds towards (x, y), then release it. */
+  focus(hold: number, x: number, y: number): this {
+    for (let t = 0; t < hold; t += DT) this.step({ focusHeld: true, aimX: x, aimY: y });
+    this.step({ focusReleased: true, aimX: x, aimY: y });
+    return this;
+  }
+
+  /** Silence footfalls (the Muffle ability). */
+  muffle(): this {
+    this.step({ mufflePressed: true });
     return this;
   }
 

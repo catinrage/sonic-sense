@@ -1,8 +1,11 @@
 import { hash2 } from "../core/rng";
+import type { CreatureKind } from "./entities/warden-traits";
 import type { Vec2 } from "../core/math";
 import {
   DECOR,
+  FACING_DIRS,
   TILE,
+  WIND_CHARS,
   type BellSpawn,
   type HintSpawn,
   type LegendEntry,
@@ -13,10 +16,14 @@ import {
 
 const center = (x: number, y: number): Vec2 => ({ x: x + 0.5, y: y + 0.5 });
 
+/** Map characters with a fixed meaning; a legend may not redefine them. */
+const BUILTIN_CHARS: ReadonlySet<string> = new Set([..."# .,\"@X*o~CWsmd123456789:%&", ...WIND_CHARS]);
+
 interface PendingWarden {
   pos: Vec2;
   route: string;
   speed: number;
+  creature: CreatureKind;
 }
 
 /**
@@ -25,6 +32,9 @@ interface PendingWarden {
  */
 export function parseLevel(def: LevelDef): LevelData {
   if (def.map.length === 0) throw new Error(`Level "${def.id}" has an empty map`);
+  for (const key of Object.keys(def.legend ?? {})) {
+    if (BUILTIN_CHARS.has(key)) throw new Error(`Level "${def.id}": legend key '${key}' shadows a built-in map character`);
+  }
   const h = def.map.length;
   const w = Math.max(...def.map.map((row) => row.length));
   const n = w * h;
@@ -37,6 +47,7 @@ export function parseLevel(def: LevelDef): LevelData {
     decor: new Uint8Array(n),
     variant: new Uint8Array(n),
     doorGroup: new Int8Array(n).fill(-1),
+    wind: new Int8Array(n).fill(-1),
     player: { x: -1, y: -1 },
     exit: null,
     shards: [],
@@ -46,6 +57,7 @@ export function parseLevel(def: LevelDef): LevelData {
     stonePiles: [],
     mushrooms: [],
     drips: [],
+    chimes: [],
     hints: [],
   };
 
@@ -66,6 +78,7 @@ export function parseLevel(def: LevelDef): LevelData {
   if (data.player.x < 0) throw new Error(`Level "${def.id}" has no player start ('@')`);
 
   data.wardens = pendingWardens.map((p) => resolveWarden(def.id, p, waypoints));
+  hangChimes(data);
   decorate(data, seed);
   return data;
 }
@@ -118,11 +131,19 @@ function applyChar(
       return;
     case "C":
       setFloor();
-      data.crystals.push(center(x, y));
+      data.crystals.push({ ...center(x, y), facing: null });
+      return;
+    case "%":
+      setFloor();
+      data.decor[i] |= DECOR.Baffle;
+      return;
+    case "&":
+      setFloor();
+      data.chimes.push(center(x, y));
       return;
     case "W":
       setFloor();
-      wardens.push({ pos: center(x, y), route: "", speed: 1 });
+      wardens.push({ pos: center(x, y), route: "", speed: 1, creature: "warden" });
       return;
     case "s":
       setFloor();
@@ -136,6 +157,16 @@ function applyChar(
       setFloor();
       data.drips.push(center(x, y));
       return;
+    case ":":
+      data.tiles[i] = TILE.Silt;
+      return;
+  }
+
+  const wind = WIND_CHARS.indexOf(ch);
+  if (wind >= 0) {
+    data.tiles[i] = TILE.Draft;
+    data.wind[i] = wind;
+    return;
   }
 
   if (ch >= "1" && ch <= "9") {
@@ -176,12 +207,38 @@ function applyLegend(
       return;
     }
     case "warden":
-      wardens.push({ pos: center(x, y), route: entry.route ?? "", speed: entry.speed ?? 1 });
+      wardens.push({ pos: center(x, y), route: entry.route ?? "", speed: entry.speed ?? 1, creature: entry.creature ?? "warden" });
       return;
     case "waypoint":
       if (waypoints.has(ch)) throw new Error(`Level "${data.def.id}": waypoint '${ch}' appears more than once`);
       waypoints.set(ch, center(x, y));
       return;
+    case "resonator":
+      data.crystals.push({ ...center(x, y), facing: FACING_DIRS[entry.facing] });
+      return;
+  }
+}
+
+/** A chime hangs in the draft blowing past it: its tile takes the wind of a neighbouring draft. */
+function hangChimes(data: LevelData): void {
+  for (const c of data.chimes) {
+    const tx = Math.floor(c.x);
+    const ty = Math.floor(c.y);
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      const nx = tx + dx;
+      const ny = ty + dy;
+      if (nx < 0 || ny < 0 || nx >= data.w || ny >= data.h) continue;
+      const wind = data.wind[ny * data.w + nx]!;
+      if (wind < 0) continue;
+      data.tiles[ty * data.w + tx] = TILE.Draft;
+      data.wind[ty * data.w + tx] = wind;
+      break;
+    }
   }
 }
 
@@ -191,7 +248,7 @@ function resolveWarden(levelId: string, pending: PendingWarden, waypoints: Map<s
     if (!wp) throw new Error(`Level "${levelId}": warden route references missing waypoint '${ch}'`);
     return wp;
   });
-  return { ...pending.pos, route, speed: pending.speed };
+  return { ...pending.pos, route, speed: pending.speed, creature: pending.creature };
 }
 
 /** Deterministic cosmetic decoration (rubble near walls, moss patches, carved runes). */

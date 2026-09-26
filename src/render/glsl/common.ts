@@ -19,7 +19,7 @@ precision highp sampler2DArray;
 layout(std140) uniform Frame {
   vec4 uCam;     // camera center xy, half view size xy (floor plane, tiles)
   vec4 uCam2;    // camera height, time, map width, map height
-  vec4 uCam3;    // wave count, field res, px size (tiles), unused
+  vec4 uCam3;    // wave count, wave reach factor, px size (tiles), loop zero
   vec4 uPlayer;  // player xy, charge, alive
   vec4 uWaveA[MAXW]; // origin xy, age, speed
   vec4 uWaveB[MAXW]; // radius, strength, layer, kind
@@ -30,6 +30,8 @@ layout(std140) uniform Frame {
 /** Always 0 at runtime; adding it to a loop bound stops shader compilers from unrolling the loop. */
 #define LOOP_ZERO int(uCam3.w)
 #define MAP_SIZE uCam2.zw
+/** Drafts carry sound past its radius: screen-space culls must scale by this. */
+#define WAVE_REACH uCam3.y
 #define CAM_H uCam2.x
 
 float depthOf(float z) { return clamp((CAM_H - z) / (CAM_H + PIT_D + 1.0), 0.0, 1.0); }

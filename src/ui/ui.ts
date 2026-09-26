@@ -1,3 +1,5 @@
+import type { AbilityView } from "../game/abilities";
+
 export type VolumeBus = "master" | "sfx" | "music";
 export type SettingKey = "shake" | "gentle";
 
@@ -11,6 +13,8 @@ export interface UIHandlers {
   onRestart(): void;
   onQuit(): void;
   onTitle(): void;
+  /** Continue past an act's interlude into the next chapter. */
+  onDescend(): void;
   onVolume(bus: VolumeBus, value: number): void;
   onSetting(key: SettingKey, value: boolean): void;
   onUiSound(kind: "move" | "select"): void;
@@ -21,6 +25,17 @@ export interface ChapterInfo {
   title: string;
   tagline: string;
   unlocked: boolean;
+  act: number;
+}
+
+/** Content of the closing screen: an act interlude or the final epilogue. */
+export interface EndingContent {
+  eyebrow: string;
+  title: string;
+  text: string;
+  action: { label: string; id: "title" | "descend" };
+  /** Interludes lead further down: cold palette instead of the golden epilogue. */
+  interlude: boolean;
 }
 
 export interface SettingsState {
@@ -36,6 +51,7 @@ const escapeHtml = (s: string): string =>
 
 /** Hint text supports [Key] tokens rendered as keycaps. */
 export const formatHint = (text: string): string => escapeHtml(text).replace(/\[([^\]]+)\]/g, "<kbd>$1</kbd>");
+
 
 /** DOM overlay: menus, HUD, chapter cards and messages. */
 export class UI {
@@ -105,18 +121,32 @@ export class UI {
     }, 1300);
   }
 
-  showChapters(chapters: readonly ChapterInfo[]): void {
-    const grid = this.bind("chapter-grid");
-    grid.replaceChildren(
-      ...chapters.map((c, i) => {
-        const b = document.createElement("button");
-        b.className = "chapter";
-        b.disabled = !c.unlocked;
-        b.dataset.chapter = String(i);
-        b.innerHTML = `<span class="chapter-numeral">${escapeHtml(c.numeral)}</span><span class="chapter-title">${escapeHtml(
-          c.unlocked ? c.title : "Unheard",
-        )}</span><span class="chapter-tag">${escapeHtml(c.unlocked ? c.tagline : "Reach it to listen.")}</span>`;
-        return b;
+  showChapters(chapters: readonly ChapterInfo[], actNames: Readonly<Record<number, string>>): void {
+    const acts = [...new Set(chapters.map((c) => c.act))].sort((a, b) => a - b);
+    this.bind("chapter-acts").replaceChildren(
+      ...acts.map((act) => {
+        const section = document.createElement("section");
+        section.className = "chapter-act";
+        const label = document.createElement("p");
+        label.className = "act-label";
+        label.textContent = `Act ${"I".repeat(act)} · ${actNames[act] ?? ""}`;
+        const grid = document.createElement("div");
+        grid.className = "chapter-grid";
+        grid.replaceChildren(
+          ...chapters.flatMap((c, i) => {
+            if (c.act !== act) return [];
+            const b = document.createElement("button");
+            b.className = "chapter";
+            b.disabled = !c.unlocked;
+            b.dataset.chapter = String(i);
+            b.innerHTML = `<span class="chapter-numeral">${escapeHtml(c.numeral)}</span><span class="chapter-title">${escapeHtml(
+              c.unlocked ? c.title : "Unheard",
+            )}</span><span class="chapter-tag">${escapeHtml(c.unlocked ? c.tagline : "Reach it to listen.")}</span>`;
+            return [b];
+          }),
+        );
+        section.append(label, grid);
+        return section;
       }),
     );
     this.openPanel("chapters");
@@ -143,12 +173,23 @@ export class UI {
     this.el.settings!.hidden = true;
   }
 
-  showEnding(): void {
+  showEnding(content: EndingContent): void {
     this.hideHud();
     for (const id of ["title", "chapters", "settings", "pause", "card", "message"]) this.el[id]!.hidden = true;
+    this.bind("ending-eyebrow").textContent = content.eyebrow;
+    this.bind("ending-title").textContent = content.title;
+    this.bind("ending-text").textContent = content.text;
+    this.bind("ending-action").dataset.action = content.action.id;
+    this.bind("ending-action-label").textContent = content.action.label;
+    this.el.ending!.classList.toggle("is-interlude", content.interlude);
     this.panelStack = ["ending"];
     this.el.ending!.hidden = false;
     this.focusFirst(this.el.ending!);
+  }
+
+  hideEnding(): void {
+    this.el.ending!.hidden = true;
+    this.panelStack = this.panelStack.filter((p) => p !== "ending");
   }
 
   // ----------------------------------------------------------------- hud
@@ -206,16 +247,52 @@ export class UI {
     this.bind("hud-hint").classList.remove("is-visible");
   }
 
-  card(chapter: string, title: string, tagline: string): void {
+  /** Show a chapter card; `grant` names an ability the chapter gives, announced beneath. */
+  card(chapter: string, title: string, tagline: string, grant = ""): void {
     const card = this.el.card!;
     this.bind("card-chapter").textContent = chapter;
     this.bind("card-title").textContent = title;
     this.bind("card-tagline").textContent = tagline;
+    const grantLine = this.bind("card-grant");
+    grantLine.textContent = grant ? `New ability \u00b7 ${grant}` : "";
+    grantLine.hidden = !grant;
     card.hidden = false;
     card.classList.remove("is-visible");
     void card.offsetWidth;
     card.classList.add("is-visible");
-    this.cardTimer = 3.8;
+    this.cardTimer = grant ? 5.8 : 3.8;
+  }
+
+  /** The ability strip under the inventory: key, name and a readiness bar per ability. */
+  setAbilities(views: readonly AbilityView[]): void {
+    const box = this.bind("hud-abilities");
+    box.hidden = views.length === 0;
+    const ids = views.map((v) => v.id).join(",");
+    if (box.dataset.ids !== ids) {
+      box.dataset.ids = ids;
+      box.replaceChildren(
+        ...views.map((v) => {
+          const chip = document.createElement("span");
+          chip.className = "ability";
+          if (v.key) {
+            const key = document.createElement("kbd");
+            key.textContent = v.key;
+            chip.append(key);
+          }
+          const name = document.createElement("span");
+          name.className = "ability-name";
+          name.textContent = v.name;
+          chip.append(name);
+          return chip;
+        }),
+      );
+    }
+    views.forEach((v, i) => {
+      const chip = box.children[i] as HTMLElement;
+      chip.classList.toggle("is-active", v.active);
+      chip.classList.toggle("is-cooling", !v.active && v.fill < 0.999);
+      chip.style.setProperty("--fill", v.fill.toFixed(3));
+    });
   }
 
   message(kind: "death" | "win", title: string, sub: string): void {
@@ -381,6 +458,9 @@ export class UI {
         break;
       case "title":
         this.handlers.onTitle();
+        break;
+      case "descend":
+        this.handlers.onDescend();
         break;
     }
   };

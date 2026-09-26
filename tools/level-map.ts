@@ -18,7 +18,7 @@ for (const i of list) {
     for (let x = 0; x < level.w; x++) {
       const ch = def.map[y]?.[x] ?? " ";
       const reach = report.reachable[y * level.w + x] === 1;
-      const walk = ".,@X*~sdm".includes(ch) || (/[a-z]/.test(ch) && ch !== "o");
+      const walk = ".,@X*~sdm:><v^%&\"".includes(ch) || (/[a-z]/.test(ch) && ch !== "o");
       row += walk && !reach ? "?" : ch;
     }
     console.log(`${String(y).padStart(2)} ${row}`);

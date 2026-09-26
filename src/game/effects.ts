@@ -19,10 +19,11 @@ export class Effects {
   ) {
     const ev = world.events;
     this.unsubscribe.push(
-      ev.on("pulse", (e) => this.pulseBurst(e.x, e.y, e.charge)),
-      ev.on("step", (e) => this.stepPuff(e.x, e.y, e.water)),
+      ev.on("pulse", (e) => (e.aim ? this.focusBurst(e.x, e.y, e.charge, e.aim.x, e.aim.y) : this.pulseBurst(e.x, e.y, e.charge))),
+      ev.on("lure", (e) => this.halo(e.x, e.y, COLORS.lure, 0.35)),
+      ev.on("step", (e) => this.stepPuff(e.x, e.y, e.water, e.silt)),
       ev.on("stoneHit", (e) => this.impact(e.x, e.y, e.strength, e.water)),
-      ev.on("crystal", (e) => this.crystalBurst(e.x, e.y)),
+      ev.on("crystal", (e) => (e.beam ? this.beamBurst(e.x, e.y, e.beam.x, e.beam.y) : this.crystalBurst(e.x, e.y))),
       ev.on("bell", (e) => this.bellRing(e.x, e.y, e.group)),
       ev.on("door", (e) => e.open && this.camera.shake(0.18)),
       ev.on("shard", (e) => this.shardBurst(e.x, e.y)),
@@ -31,6 +32,9 @@ export class Effects {
       ev.on("death", (e) => this.death(e.x, e.y, e.cause)),
       ev.on("complete", (e) => this.complete(e.x, e.y)),
       ev.on("wardenAlert", () => this.camera.shake(0.22)),
+      ev.on("sentinelCall", (e) => this.halo(e.x, e.y, COLORS.sentinel, 0.9)),
+      ev.on("chime", (e) => this.halo(e.x, e.y, COLORS.chime, 0.6)),
+      ev.on("tremorThump", (e) => this.thump(e.x, e.y)),
       ev.on("pickup", (e) => this.sparkle(e.x, e.y, COLORS.stone, 10)),
     );
   }
@@ -148,12 +152,36 @@ export class Effects {
     this.camera.shake(0.08 + charge * 0.3);
   }
 
-  private stepPuff(x: number, y: number, water: boolean): void {
+  private focusBurst(x: number, y: number, charge: number, ax: number, ay: number): void {
+    const n = 18 + Math.floor(charge * 20);
+    for (let i = 0; i < n; i++) {
+      const spread = fxRng.range(-0.3, 0.3);
+      const dx = ax * Math.cos(spread) - ay * Math.sin(spread);
+      const dy = ax * Math.sin(spread) + ay * Math.cos(spread);
+      const sp = fxRng.range(3, 7) * (0.6 + charge);
+      this.particles.spawn({
+        x: x + ax * 0.25,
+        y: y + ay * 0.25,
+        z: fxRng.range(0.15, 0.4),
+        vx: dx * sp,
+        vy: dy * sp,
+        life: fxRng.range(0.2, 0.45),
+        size: fxRng.range(0.02, 0.035),
+        color: scale(COLORS.focus, 2.5),
+        drag: 3.5,
+        kind: PARTICLE_KIND.Spark,
+        stretch: 0.12,
+      });
+    }
+    this.camera.shake(0.05 + charge * 0.15);
+  }
+
+  private stepPuff(x: number, y: number, water: boolean, silt: boolean): void {
     if (water) {
       this.splash(x, y, 0.7);
       return;
     }
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < (silt ? 1 : 3); i++) {
       this.particles.spawn({
         x: x + fxRng.range(-0.05, 0.05),
         y: y + fxRng.range(-0.05, 0.05),
@@ -246,6 +274,32 @@ export class Effects {
     this.camera.shake(0.06);
   }
 
+  /** A resonator fires its song down the beam: sparks stream out of the dish. */
+  private beamBurst(x: number, y: number, bx: number, by: number): void {
+    for (let i = 0; i < 30; i++) {
+      const spread = fxRng.range(-0.35, 0.35);
+      const dx = bx * Math.cos(spread) - by * Math.sin(spread);
+      const dy = bx * Math.sin(spread) + by * Math.cos(spread);
+      const sp = fxRng.range(2, 6);
+      this.particles.spawn({
+        x: x + bx * 0.2,
+        y: y + by * 0.2,
+        z: fxRng.range(0.15, 0.5),
+        vx: dx * sp,
+        vy: dy * sp,
+        vz: fxRng.range(-0.2, 0.3),
+        life: fxRng.range(0.3, 0.7),
+        size: fxRng.range(0.02, 0.04),
+        color: scale(COLORS.crystal, 2.4),
+        drag: 2.5,
+        kind: PARTICLE_KIND.Spark,
+        stretch: 0.14,
+      });
+    }
+    this.sparkle(x, y, COLORS.crystal, 10, 0.3);
+    this.camera.shake(0.08);
+  }
+
   private bellRing(x: number, y: number, group: number): void {
     this.sparkle(x, y, COLORS.bell, 18, 0.3);
     for (let k = 0; k < 3; k++) {
@@ -274,6 +328,34 @@ export class Effects {
       }
     }
     this.camera.shake(0.1);
+  }
+
+  private halo(x: number, y: number, color: RGB, size: number): void {
+    this.particles.spawn({ x, y, z: 0.5, life: 0.9, size: 0.2, sizeEnd: size * 2.2, color: scale(color, 0.8), kind: PARTICLE_KIND.Ring });
+    this.sparkle(x, y, color, 6, 0.25);
+  }
+
+  /** Dust shaken loose by a tremor's footfall; the camera feels the close ones. */
+  private thump(x: number, y: number): void {
+    for (let i = 0; i < 6; i++) {
+      const a = fxRng.range(0, Math.PI * 2);
+      const sp = fxRng.range(0.2, 0.7);
+      this.particles.spawn({
+        x: x + Math.cos(a) * 0.3,
+        y: y + Math.sin(a) * 0.3,
+        z: 0.02,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        vz: fxRng.range(0.1, 0.4),
+        life: fxRng.range(0.5, 0.9),
+        size: fxRng.range(0.015, 0.03),
+        color: scale(COLORS.tremor, 0.6),
+        drag: 2.5,
+      });
+    }
+    const p = this.world.player;
+    const d = Math.hypot(p.x - x, p.y - y);
+    if (d < 6) this.camera.shake(0.07 * (1 - d / 6));
   }
 
   private shardBurst(x: number, y: number): void {

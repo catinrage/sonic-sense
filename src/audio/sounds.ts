@@ -13,6 +13,8 @@ export interface EchoTap {
 
 /** Pentatonic scale for crystals (A minor pentatonic). */
 const CRYSTAL_NOTES = [880, 1046.5, 1174.66, 1318.5, 1568];
+/** Chime tubes: the same scale an octave up, so chimes and crystals sound kin. */
+const CHIME_NOTES = [1760, 2093, 2349.3, 2637, 3136];
 const SHARD_ARP = [1046.5, 1318.5, 1568, 2093];
 /** Semitones spanned per bell group, matching the synthesized bell's base pitch. */
 const BELL_GROUP_SEMITONES = 2;
@@ -69,6 +71,35 @@ export class Sfx {
     }
   }
 
+  /** A focused call: a thin, high whistle that dies quickly, with a single faint echo. */
+  focus(charge: number): void {
+    const c = this.core;
+    const v = c.direct(0.7, 0.15);
+    if (!v) return;
+    c.tone(v.input, v.t, { f0: 3400 - charge * 500, f1: 1900, glide: 0.12, decay: 0.16, gain: 0.2 });
+    c.tone(v.input, v.t, { type: "triangle", f0: 1250, f1: 1100, glide: 0.2, decay: 0.3, gain: 0.06 });
+    c.tone(v.input, v.t + 0.22, { f0: 2400, f1: 1500, glide: 0.1, decay: 0.12, gain: 0.04 });
+  }
+
+  /** Muffle: a soft inward hush when it takes hold, a small exhale when it lifts. */
+  muffle(on: boolean): void {
+    const c = this.core;
+    const v = c.direct(0.6, 0.3);
+    if (!v) return;
+    c.burst(v.input, v.t, { type: "lowpass", freq: on ? 900 : 1400, freq1: on ? 250 : 2200, q: 0.7, attack: 0.06, decay: on ? 0.55 : 0.3, gain: 0.12, brown: true });
+    if (on) c.tone(v.input, v.t, { type: "triangle", f0: 330, f1: 220, glide: 0.4, decay: 0.5, gain: 0.04, attack: 0.05 });
+  }
+
+  /** A lure stone's chirp: small, bright and insistent. */
+  lure(x: number, y: number, left: number): void {
+    const c = this.core;
+    const v = c.spatial(x, y, 0.8, 0.4);
+    if (!v) return;
+    const f = 2200 + (left % 2) * 260;
+    c.tone(v.input, v.t, { f0: f, f1: f * 1.25, glide: 0.04, decay: 0.07, gain: 0.12 });
+    c.tone(v.input, v.t + 0.09, { f0: f * 1.2, f1: f * 1.4, glide: 0.04, decay: 0.07, gain: 0.08 });
+  }
+
   private synthChirp(out: AudioNode, at: number, charge: number, level: number): void {
     const c = this.core;
     c.tone(out, at, { f0: 2600 - charge * 700, f1: 820 - charge * 200, glide: 0.07, decay: 0.12, gain: 0.32 * level });
@@ -83,11 +114,16 @@ export class Sfx {
   }
 
   /** Deliberately synthesized: play-testing preferred it over the samples. */
-  footstep(x: number, y: number, water: boolean, sneak: boolean): void {
+  footstep(x: number, y: number, water: boolean, sneak: boolean, silt = false): void {
     const c = this.core;
-    const v = c.spatial(x, y, sneak ? 0.35 : 1, 0.2);
+    const v = c.spatial(x, y, sneak || silt ? 0.35 : 1, 0.2);
     if (!v) return;
     const t = v.t + Math.random() * 0.01;
+    if (silt) {
+      // A soft, dry hush: the ground takes the step.
+      c.burst(v.input, t, { type: "lowpass", freq: 420, q: 0.6, attack: 0.02, decay: 0.12, gain: 0.07, brown: true });
+      return;
+    }
     if (water) {
       c.burst(v.input, t, { freq: 700, freq1: 2600, q: 1.2, decay: 0.16, gain: 0.26 });
       for (let i = 0; i < 3; i++) {
@@ -197,22 +233,22 @@ export class Sfx {
     }
   }
 
-  wardenAlert(x: number, y: number): void {
+  wardenAlert(x: number, y: number, pitch = 1): void {
     const c = this.core;
     const ctx = c.ctx;
     const v = c.spatial(x, y, 1.3, 0.55);
     if (!ctx || !v) return;
     const t = v.t;
-    if (this.bank.play(v.input, "warden-shriek", t, { rate: wobble(0.04) })) {
+    if (this.bank.play(v.input, "warden-shriek", t, { rate: pitch * wobble(0.04) })) {
       // Keep the low growl under the shriek: it is what makes an alert read as danger.
       c.tone(v.input, t, { type: "sawtooth", f0: 72, f1: 55, decay: 0.6, gain: 0.14 });
       return;
     }
     const osc = ctx.createOscillator();
     osc.type = "sawtooth";
-    osc.frequency.setValueAtTime(520, t);
-    osc.frequency.exponentialRampToValueAtTime(1350, t + 0.18);
-    osc.frequency.exponentialRampToValueAtTime(760, t + 0.6);
+    osc.frequency.setValueAtTime(520 * pitch, t);
+    osc.frequency.exponentialRampToValueAtTime(1350 * pitch, t + 0.18);
+    osc.frequency.exponentialRampToValueAtTime(760 * pitch, t + 0.6);
     const vib = ctx.createOscillator();
     vib.frequency.value = 23;
     const vibGain = ctx.createGain();
@@ -232,6 +268,45 @@ export class Sfx {
     osc.stop(t + 0.75);
     vib.stop(t + 0.75);
     c.tone(v.input, t, { type: "sawtooth", f0: 72, f1: 55, decay: 0.6, gain: 0.2 });
+  }
+
+  /** A sentinel's slow call: a hollow, bone-horn hoot with a glassy overtone. */
+  sentinelCall(x: number, y: number): void {
+    const c = this.core;
+    const v = c.spatial(x, y, 1, 0.9);
+    if (!v) return;
+    const t = v.t;
+    c.tone(v.input, t, { type: "triangle", f0: 233, f1: 207, glide: 0.9, attack: 0.12, decay: 1.3, gain: 0.16 });
+    c.tone(v.input, t, { f0: 466, f1: 415, glide: 0.9, attack: 0.15, decay: 0.9, gain: 0.05 });
+    c.tone(v.input, t + 0.05, { f0: 1864, decay: 1.4, gain: 0.018, attack: 0.2 });
+    c.burst(v.input, t, { freq: 700, q: 1.5, attack: 0.1, decay: 0.5, gain: 0.04, brown: true });
+  }
+
+  /** Bone tubes knocking together in a draft: two or three glassy, inharmonic notes. */
+  chime(x: number, y: number, note: number): void {
+    const c = this.core;
+    const v = c.spatial(x, y, 0.9, 0.9);
+    if (!v) return;
+    const knocks = 2 + (note % 2);
+    for (let k = 0; k < knocks; k++) {
+      const f = CHIME_NOTES[(note + k * 2) % CHIME_NOTES.length]! * wobble(0.004);
+      const at = v.t + k * (0.11 + Math.random() * 0.08);
+      const g = 0.07 / (1 + k * 0.5);
+      c.tone(v.input, at, { f0: f, decay: 2.4, gain: g, attack: 0.002 });
+      c.tone(v.input, at, { f0: f * 2.76, decay: 0.9, gain: g * 0.35, attack: 0.002 });
+      c.tone(v.input, at, { f0: f * 5.4, decay: 0.35, gain: g * 0.15, attack: 0.001 });
+    }
+  }
+
+  /** A tremor's footfall: felt more than heard. */
+  tremorThump(x: number, y: number): void {
+    const c = this.core;
+    const v = c.spatial(x, y, 1.2, 0.3);
+    if (!v) return;
+    const t = v.t;
+    c.tone(v.input, t, { f0: 62, f1: 34, glide: 0.18, decay: 0.32, gain: 0.34 });
+    c.burst(v.input, t, { type: "lowpass", freq: 320, q: 0.8, decay: 0.16, gain: 0.3, brown: true });
+    c.burst(v.input, t + 0.02, { freq: 1900, q: 3, decay: 0.03, gain: 0.03 });
   }
 
   shard(index: number): void {

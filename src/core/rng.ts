@@ -46,5 +46,13 @@ export function hash2(x: number, y: number, seed = 0): number {
   return (h >>> 0) / 4294967296;
 }
 
-/** Shared RNG for cosmetic randomness (particles, idle animations). */
+/**
+ * Stable 32-bit seed for an entity placed at (x, y). Gameplay randomness is
+ * seeded per entity so behaviour never depends on what else was created first.
+ */
+export function seedFor(x: number, y: number, salt: number): number {
+  return Math.floor(hash2(Math.floor(x * 2), Math.floor(y * 2), salt) * 4294967296) >>> 0;
+}
+
+/** Shared RNG for cosmetic randomness only (particles, blinks) — never for gameplay. */
 export const fxRng = new Rng(1337);

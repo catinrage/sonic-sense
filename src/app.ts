@@ -1,14 +1,16 @@
 import type { Input } from "./core/input";
 import type { Renderer } from "./render/renderer";
 import { Stage } from "./game/game";
-import { LEVELS, SHOWCASE } from "./game/levels";
+import { ABILITY_INFO, abilityViews } from "./game/abilities";
+import { callProfile } from "./game/calls";
+import { ACT_NAMES, DIORAMAS, LEVELS, SHOWCASE } from "./game/levels";
 import type { PlayerIntent } from "./game/entities/player";
 import { MAX_STONES } from "./game/entities/player";
 import { COLORS } from "./game/palette";
 import type { World } from "./game/world";
 import type { LevelDef, StartHint } from "./game/level-types";
 import { AudioDirector } from "./audio/director";
-import { UI, type ChapterInfo, type SettingKey, type VolumeBus } from "./ui/ui";
+import { UI, type ChapterInfo, type EndingContent, type SettingKey, type VolumeBus } from "./ui/ui";
 import { loadSave, persist, type SaveData } from "./save";
 
 const MAX_DT = 1 / 20;
@@ -17,6 +19,14 @@ const COMPLETE_DELAY = 2.6;
 const ATTRACT_PERIOD = 3.6;
 
 type Mode = "title" | "playing" | "paused" | "dying" | "completing" | "ending";
+
+const FINAL_EPILOGUE: EndingContent = {
+  eyebrow: "Epilogue",
+  title: "Out of the Dark",
+  text: "The last Gate hums, and the breath of the deep rushes past you, up towards a world that is loud and bright — carrying every sound you ever made. You follow it into the light, and you will never again mistake silence for emptiness.",
+  action: { label: "Return to title", id: "title" },
+  interlude: false,
+};
 
 const DEATH_LINES: Record<"pit" | "warden", [string, string]> = {
   pit: ["The floor was not there", "Press R — or wait"],
@@ -54,12 +64,13 @@ export class App {
       onPlay: () => this.beginJourney(0),
       onContinue: () => this.beginJourney(this.save.last),
       onChapter: (i) => this.beginJourney(i),
-      onOpenChapters: () => this.ui.showChapters(this.chapterList()),
+      onOpenChapters: () => this.ui.showChapters(this.chapterList(), ACT_NAMES),
       onOpenSettings: () => this.ui.showSettings({ volumes: this.save.volumes, shake: this.save.shake, gentle: this.save.gentle }),
       onResume: () => this.resume(),
       onRestart: () => this.restartLevel(true),
       onQuit: () => this.enterTitle(),
       onTitle: () => this.enterTitle(),
+      onDescend: () => this.beginJourney(this.save.last),
       onVolume: (bus, v) => this.setVolume(bus, v),
       onSetting: (key, v) => this.setSetting(key, v),
       onUiSound: (kind) => (kind === "move" ? this.audio.sfx.uiMove() : this.audio.sfx.uiSelect()),
@@ -214,6 +225,7 @@ export class App {
       }
     }
     const p = this.stage.world.player;
+    this.ui.setAbilities(abilityViews(this.stage.world.abilities, p));
     if (p.stones !== this.hudStones) {
       this.hudStones = p.stones;
       this.hadStones ||= p.stones > 0;
@@ -243,6 +255,7 @@ export class App {
   }
 
   private beginJourney(index: number): void {
+    this.ui.hideEnding();
     this.audio.unlock();
     this.audio.ambience.start();
     this.ui.hideTitle();
@@ -270,8 +283,10 @@ export class App {
     this.hudStones = -1;
     this.hadStones = (def.stones ?? 0) > 0;
     this.toldNoStones = false;
-    if (withCard) this.ui.card(`Chapter ${def.chapter}`, def.title, def.tagline);
-    this.pendingHints = withCard ? (def.startHints ?? []).map((h) => ({ ...h, at: h.delay ?? 1 })) : [];
+    const granted = (def.grants ?? []).map((id) => ABILITY_INFO[id]);
+    if (withCard) this.ui.card(`Chapter ${def.chapter}`, def.title, def.tagline, granted.map((g) => g.name).join(" \u00b7 "));
+    const grantHints = granted.map((g, i) => ({ text: g.blurb, duration: 7, at: 4.5 + i * 7.5 }));
+    this.pendingHints = withCard ? [...grantHints, ...(def.startHints ?? []).map((h) => ({ ...h, at: (h.delay ?? 1) + grantHints.length * 7.5 }))] : [];
     this.save.last = index;
     persist(this.save);
     document.getElementById("view")?.focus({ preventScroll: true });
@@ -283,20 +298,32 @@ export class App {
   }
 
   private advance(): void {
+    const done = LEVELS[this.levelIndex]!;
     const next = this.levelIndex + 1;
     this.save.unlocked = Math.max(this.save.unlocked, Math.min(next, LEVELS.length - 1));
     if (next >= LEVELS.length) {
       this.save.last = 0;
       persist(this.save);
-      this.enterEnding();
+      this.enterEnding(FINAL_EPILOGUE);
       return;
     }
     this.save.last = next;
     persist(this.save);
+    if (done.endsAct) {
+      // The act is over: pause on its interlude before the descent continues.
+      this.enterEnding({
+        eyebrow: "Interlude",
+        title: done.endsAct.title,
+        text: done.endsAct.text,
+        action: { label: done.endsAct.next, id: "descend" },
+        interlude: true,
+      });
+      return;
+    }
     this.startLevel(next, true);
   }
 
-  private enterEnding(): void {
+  private enterEnding(content: EndingContent): void {
     this.mode = "ending";
     this.modeT = 0;
     this.input.enabled = false;
@@ -309,7 +336,7 @@ export class App {
     world.player.invulnerable = true;
     for (const w of world.wardens) w.deaf = true;
     this.stage.post.fade = 1;
-    this.ui.showEnding();
+    this.ui.showEnding(content);
   }
 
   private pause(): void {
@@ -424,7 +451,13 @@ export class App {
   }
 
   private chapterList(): ChapterInfo[] {
-    return LEVELS.map((l, i) => ({ numeral: l.chapter, title: l.title, tagline: l.tagline, unlocked: i <= this.save.unlocked }));
+    return LEVELS.map((l, i) => ({
+      numeral: l.chapter,
+      title: l.title,
+      tagline: l.tagline,
+      unlocked: i <= this.save.unlocked,
+      act: l.act ?? 1,
+    }));
   }
 
   // ------------------------------------------------------------ debug API
@@ -445,22 +478,17 @@ export class App {
 
   debugPulse(charge = 0.5): void {
     const p = this.stage.world.player;
-    const radius = 5.5 + charge * 9.5;
     this.stage.world.emitSound({
       kind: "pulse",
       x: p.x,
       y: p.y,
-      radius,
-      loudness: radius,
-      strength: 0.9 + charge * 0.35,
-      speed: 8.5 + charge * 2.5,
-      fade: 2.6 + charge * 1.8,
+      ...callProfile(charge),
       color: COLORS.pulse,
       source: p,
       alerts: true,
       hits: true,
     });
-    this.stage.world.events.emit("pulse", { x: p.x, y: p.y, charge });
+    this.stage.world.events.emit("pulse", { x: p.x, y: p.y, charge, aim: null });
   }
 
   /** Teleport the player and camera for close-up inspection. */
@@ -470,6 +498,19 @@ export class App {
     p.y = y;
     this.stage.camera.snap(x, y);
     this.stage.zoomOverride = zoom;
+  }
+
+  /** Load a non-campaign diorama (see DIORAMAS) with an invulnerable player. */
+  debugDiorama(id: string): void {
+    const def = DIORAMAS[id];
+    if (!def) throw new Error(`Unknown diorama "${id}"`);
+    this.ui.hideTitle();
+    this.mode = "playing";
+    this.input.enabled = true;
+    this.stage.cameraOffset = { x: 0, y: 0 };
+    const world = this.loadWorld(def);
+    world.player.invulnerable = true;
+    this.stage.post.fade = 0;
   }
 
   debugLevel(index: number): void {

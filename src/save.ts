@@ -1,6 +1,16 @@
 const STORAGE_KEY = "sonic-sense:v1";
 
+/** Bumped when stored progress needs upgrading on load. */
+export const SAVE_VERSION = 2;
+
+/**
+ * Index of Act I's last chapter. Version-1 saves were written when the game
+ * ended there, so reaching it meant the whole game was open to you.
+ */
+const ACT_ONE_FINALE = 6;
+
 export interface SaveData {
+  version: number;
   /** Highest chapter index unlocked. */
   unlocked: number;
   /** Chapter to continue from. */
@@ -11,6 +21,7 @@ export interface SaveData {
 }
 
 const DEFAULTS: SaveData = {
+  version: SAVE_VERSION,
   unlocked: 0,
   last: 0,
   volumes: { master: 0.8, sfx: 1, music: 0.7 },
@@ -28,8 +39,12 @@ export function parseSave(raw: unknown): SaveData {
   if (!raw || typeof raw !== "object") return structuredClone(DEFAULTS);
   const r = raw as Record<string, unknown>;
   const vol = (r.volumes && typeof r.volumes === "object" ? r.volumes : {}) as Record<string, unknown>;
+  let unlocked = clampIndex(r.unlocked);
+  // Act I players who reached its finale may continue straight into Act II.
+  if (r.version !== SAVE_VERSION && unlocked >= ACT_ONE_FINALE) unlocked = ACT_ONE_FINALE + 1;
   return {
-    unlocked: clampIndex(r.unlocked),
+    version: SAVE_VERSION,
+    unlocked,
     last: clampIndex(r.last),
     volumes: {
       master: clamp01(vol.master, DEFAULTS.volumes.master),

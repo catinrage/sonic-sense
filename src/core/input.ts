@@ -1,4 +1,4 @@
-export type Action = "up" | "down" | "left" | "right" | "pulse" | "sneak" | "throw" | "restart" | "pause" | "confirm";
+export type Action = "up" | "down" | "left" | "right" | "pulse" | "focus" | "muffle" | "sneak" | "throw" | "restart" | "pause" | "confirm";
 
 const KEY_BINDINGS: Record<string, Action[]> = {
   KeyW: ["up"],
@@ -13,6 +13,8 @@ const KEY_BINDINGS: Record<string, Action[]> = {
   ShiftLeft: ["sneak"],
   ShiftRight: ["sneak"],
   KeyE: ["throw"],
+  KeyQ: ["focus"],
+  KeyF: ["muffle"],
   KeyR: ["restart"],
   Escape: ["pause"],
   KeyP: ["pause"],
@@ -96,6 +98,8 @@ export class Input {
     if (pad.buttons[6]?.pressed || pad.buttons[4]?.pressed) now.add("sneak");
     if (pad.buttons[9]?.pressed) now.add("pause");
     if (pad.buttons[3]?.pressed) now.add("restart");
+    if (pad.buttons[2]?.pressed) now.add("focus");
+    if (pad.buttons[5]?.pressed) now.add("muffle");
     for (const a of now) if (!this.padPrev.has(a)) this.press(a);
     for (const a of this.padPrev) if (!now.has(a)) this.release(a);
     this.padPrev = now;

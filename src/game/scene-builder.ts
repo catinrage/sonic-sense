@@ -40,6 +40,7 @@ export class SceneBuilder {
       this.add("shard", s.x, s.y, bob, t * 0.8 + s.phase, 0.42, 0.42, 4, [s.glint, t, s.collected ? s.collectT / 0.6 : 0, bob]);
     }
     for (const c of world.crystals) {
+      if (c.beam) this.add("dish", c.x, c.y, 0.02, Math.atan2(c.beam.y, c.beam.x), 0.72, 0.72, 4.9 + c.y * 0.001, [c.glow, t, 0, 0]);
       const shake = Math.sin(t * 60) * c.shake * 0.03;
       this.add("crystal", c.x + shake, c.y, 0.03, c.seed * 6.28, 0.62, 0.62, 5 + c.y * 0.001, [c.glow, t, c.seed, c.pending >= 0 ? 1 : 0]);
     }
@@ -50,11 +51,18 @@ export class SceneBuilder {
     for (let i = 0; i < world.wardens.length; i++) {
       const w = world.wardens[i]!;
       const legs = w.legPose((this.legBuffers[i] ??= new Float32Array(48)));
-      this.add("warden", w.x, w.y, 0.12, w.heading, 1.25, 1.25, 6 + w.y * 0.001, [w.frill, w.alert, t, w.moving], [w.mandible, 0, 0, 0], legs);
+      const size = 1.25 * w.traits.scale;
+      this.add("warden", w.x, w.y, 0.12, w.heading, size, size, 6 + w.y * 0.001, [w.frill, w.alert, t, w.moving], [w.mandible, w.traits.variant, w.traits.scale, 0], legs);
     }
+    for (const c of world.chimes) {
+      this.add("chime", c.x, c.y, 1.05, 0, 0.46, 0.46, 8.6, [c.swing, t, (c.x * 0.37 + c.y * 0.61) % 1, 0]);
+    }
+    for (const b of world.baffles) this.addCurtain(world, b.x, b.y, t);
     const p = world.player;
     const alpha = 1 - p.fade;
-    this.add("aura", p.x, p.y, 0.01, 0, 0.75, 0.75, 7, [p.charge, t, p.sneakAmt, alpha], undefined, undefined, true);
+    const focusing = p.charging && p.chargeKind === "focus" ? 1 : 0;
+    const aimAngle = aim ? Math.atan2(aim.y - p.y, aim.x - p.x) : p.facing;
+    this.add("aura", p.x, p.y, 0.01, 0, 0.75, 0.75, 7, [p.charge, t, p.sneakAmt, alpha], [p.listen, p.muffled ? 1 : 0, focusing, aimAngle], undefined, true);
     this.add(
       "player",
       p.x,
@@ -71,6 +79,22 @@ export class SceneBuilder {
       [t, 0, p.fade, 0],
     );
     return this.out;
+  }
+
+  /** A moss curtain, parted around the nearest creature pushing through it. */
+  private addCurtain(world: World, x: number, y: number, t: number): void {
+    let mx = 0;
+    let my = 0;
+    let best = 1.1;
+    for (const m of [world.player, ...world.wardens]) {
+      const d = Math.hypot(m.x - x, m.y - y);
+      if (d >= best) continue;
+      best = d;
+      mx = m.x - x;
+      my = m.y - y;
+    }
+    const part = Math.max(0, 1 - best / 1.1);
+    this.add("curtain", x, y, 0.95, 0, 0.62, 0.62, 8.5, [t, (x * 0.73 + y * 0.29) % 1, mx, my], [part, 0, 0, 0]);
   }
 
   private add(
