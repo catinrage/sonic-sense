@@ -1,0 +1,108 @@
+import type { LevelDef } from "../level-types";
+
+export const FIRST_LIGHT: LevelDef = {
+  id: "first-light",
+  chapter: "I",
+  title: "First Light",
+  tagline: "Hold your breath. Then call out — and listen to what answers.",
+  map: [
+    "######################################",
+    "######################################",
+    "####......############################",
+    "###......,.##############.........####",
+    "###...@....############..m........####",
+    "###.........a......................###",
+    "####......#############.b...~~~....###",
+    "#######,,,#############....~~~~~.d.###",
+    "#######################....~~~~~...###",
+    "########################....~~~....###",
+    "#########################.........####",
+    "#################################.####",
+    "##############################.c..####",
+    "#################..............#######",
+    "################..X.......,....#######",
+    "#################....m.......#########",
+    "######################################",
+    "######################################",
+  ],
+  legend: {
+    a: { kind: "hint", text: "Echoes fade quickly — but their outline lingers a little while.", radius: 1.6 },
+    b: { kind: "hint", text: "A short call stays close. Hold [Space] longer and your voice carries across the cave.", radius: 1.8 },
+    c: { kind: "hint", text: "Hear that hum? The Gate is calling back. Follow its golden echo.", radius: 2 },
+  },
+  startHints: [
+    { text: "Hold [Space] to draw breath — release it to call into the dark.", delay: 1.4, duration: 7 },
+    { text: "Move with [W] [A] [S] [D]. Your footsteps whisper back what lies underfoot.", delay: 9, duration: 6 },
+  ],
+};
+
+export const HOLLOW_FLOOR: LevelDef = {
+  id: "hollow-floor",
+  chapter: "II",
+  title: "The Hollow Floor",
+  tagline: "The ground here is a lie. Only echoes tell the truth.",
+  map: [
+    "######################################",
+    "######################################",
+    "######################################",
+    "###.....##############################",
+    "##......##oooooooooooooooooooooo######",
+    "##..@...##ooooooo.......oooooooo######",
+    "##......a.....ooo..o.oo.oooooooo######",
+    "##..s...##ooo.ooo.oo.oo.oooooooo######",
+    "###....###ooo.ooo.ooooo.oo....oo######",
+    "##########o.......ooooo.oo.oo.oo######",
+    "##########o.ooo.ooooooo.oo.oo.oo######",
+    "##########ooooo.ooooooo....oo.oo#.m..#",
+    "##########ooooo.oooooooooo.oo.oo#....#",
+    "##########o*....oooooooooo.oo......X.#",
+    "##########oooooooooooooooo..oooo#....#",
+    "##########oooooooooooooooooooooo#....#",
+    "######################################",
+    "######################################",
+  ],
+  legend: {
+    a: {
+      kind: "hint",
+      text: "The floor gives way ahead. Where no echo returns, there is nothing to stand on.",
+      radius: 1.6,
+    },
+  },
+  startHints: [
+    { text: "An Echo Shard lies somewhere in the chasm. The Gate will not open without it.", delay: 1.2, duration: 6.5 },
+  ],
+};
+
+export const RESONANCE: LevelDef = {
+  id: "resonance",
+  chapter: "III",
+  title: "Resonance",
+  tagline: "Some stones remember a song. Wake them, and they sing it back.",
+  map: [
+    "##############################################",
+    "###########ooo################################",
+    "####.....##oAo####..........##################",
+    "###.......#ooo###...,......a.oooooooCooooB####",
+    "###..@........b.1............#################",
+    "###.......#######.......d....#####......######",
+    "####.....########............2..........######",
+    "#################............#####...X..######",
+    "#################............#####......######",
+    "#################.....oooooo.#####......######",
+    "#################.....o*...o.#################",
+    "#################..m..oooo.o.#################",
+    "#################.....oooo...#################",
+    "##############################################",
+    "##############################################",
+  ],
+  legend: {
+    A: { kind: "bell", group: 1 },
+    B: { kind: "bell", group: 2 },
+    a: {
+      kind: "hint",
+      text: "The bell is too far for any voice. The crystal between you is not. Hold [Space] longer.",
+      radius: 1.8,
+    },
+    b: { kind: "hint", text: "Bronze bells ring when a voice reaches them — and their doors listen.", radius: 1.8 },
+  },
+};
