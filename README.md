@@ -74,6 +74,9 @@ played with, and grants at most one new one:
 - **Deep Listen** — stand still, and the world's own sounds reveal far more.
   **Focus** — a narrow, quiet call that strikes harder. **Lure Stone** — thrown
   stones keep chirping where they land. **Muffle** — a few silent seconds.
+  Each is taught on its own screen when its chapter begins (the chapter waits
+  until you have read it), the HUD shows what sets each one off, and the pause
+  menu lists the abilities the current chapter is played with.
 
 Progress and settings are saved in the browser.
 

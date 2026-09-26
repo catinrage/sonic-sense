@@ -854,6 +854,132 @@ input[type="checkbox"]:checked::after {
   animation: fade-in 2s var(--ease-out) both;
 }
 
+/* --------------------------------------------------------------- lesson */
+
+.lesson {
+  max-width: 34rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: card-rise 0.9s var(--ease-out) both;
+}
+
+.lesson-eyebrow {
+  color: #f4e3b2;
+  text-shadow: 0 0 22px rgba(255, 214, 140, 0.35);
+}
+
+.lesson-glyph {
+  width: 4.6rem;
+  height: 4.6rem;
+  margin: 0.4rem 0 0.9rem;
+  color: var(--cyan);
+  filter: drop-shadow(0 0 14px var(--cyan-glow));
+}
+
+.lesson-glyph svg {
+  width: 100%;
+  height: 100%;
+}
+
+.lesson-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(2rem, 1.3rem + 2.4vw, 3.2rem);
+  letter-spacing: 0.12em;
+  color: #f0fbff;
+  text-shadow: 0 0 40px rgba(108, 240, 255, 0.22);
+}
+
+.lesson-use {
+  margin: 1.3rem 0 0;
+  font-size: calc(var(--text-body) * 1.05);
+  letter-spacing: 0.06em;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.lesson-use kbd {
+  font-size: 0.8rem;
+}
+
+.lesson-does {
+  margin: 1rem 0 0;
+  font-size: var(--text-body);
+  letter-spacing: 0.05em;
+  line-height: 1.75;
+  color: var(--text-soft);
+}
+
+.lesson-tip {
+  margin: 1rem 0 2.2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+  font-size: var(--text-small);
+  letter-spacing: 0.08em;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+@keyframes card-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.8rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The abilities a chapter is played with, listed under the pause menu. */
+.pause-kit {
+  width: 100%;
+  margin-top: 0.4rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.kit-name {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  font-size: var(--text-small);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.kit-name kbd {
+  font-size: 0.66rem;
+}
+
+.kit-blurb {
+  margin: 0.3rem 0 0;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* What sets off an ability that has no key: a quiet tag in place of a keycap. */
+.ability-trigger {
+  padding: 0.12em 0.5em;
+  border: 1px dashed rgba(108, 240, 255, 0.35);
+  border-radius: 0.3em;
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  opacity: 0.85;
+}
+
 .ending-block {
   max-width: 36rem;
   text-align: center;

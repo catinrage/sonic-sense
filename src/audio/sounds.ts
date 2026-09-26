@@ -81,6 +81,15 @@ export class Sfx {
     c.tone(v.input, v.t + 0.22, { f0: 2400, f1: 1500, glide: 0.1, decay: 0.12, gain: 0.04 });
   }
 
+  /** Deep Listen opening: the room's hush swells, and a faint high shimmer rises through it. */
+  listen(): void {
+    const c = this.core;
+    const v = c.direct(0.5, 0.6);
+    if (!v) return;
+    c.burst(v.input, v.t, { type: "lowpass", freq: 300, freq1: 1400, q: 0.5, attack: 0.5, decay: 0.9, gain: 0.07, brown: true });
+    c.tone(v.input, v.t + 0.15, { type: "triangle", f0: 1320, f1: 1760, glide: 0.8, attack: 0.35, decay: 1.1, gain: 0.025 });
+  }
+
   /** Muffle: a soft inward hush when it takes hold, a small exhale when it lifts. */
   muffle(on: boolean): void {
     const c = this.core;

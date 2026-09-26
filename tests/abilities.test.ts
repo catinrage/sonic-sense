@@ -5,7 +5,8 @@ import { checkLevel } from "../src/game/level-check";
 import { LISTEN_GAIN } from "../src/game/calls";
 import { UNREACHED } from "../src/game/geodesic";
 import { LURE_CHIRPS } from "../src/game/entities/props";
-import { abilityViews } from "../src/game/abilities";
+import { ABILITY_INFO, abilityViews, lessonsFor } from "../src/game/abilities";
+import { LEVELS } from "../src/game/levels";
 import { IDLE_INTENT, MUFFLE_COOLDOWN, MUFFLE_TIME, type PlayerIntent } from "../src/game/entities/player";
 import type { Ability, LevelDef } from "../src/game/level-types";
 import type { Wave } from "../src/game/waves";
@@ -175,5 +176,54 @@ describe("Muffle", () => {
     run(muffled, 1 / 60, { mufflePressed: true });
     run(muffled, 2.2, { moveX: 1 });
     expect(["idle", "patrol"]).toContain(muffled.wardens[0]!.state);
+  });
+});
+
+describe("teaching the abilities", () => {
+  test("every ability says how to use it, what it does and what to watch for", () => {
+    for (const [id, info] of Object.entries(ABILITY_INFO)) {
+      expect(info.name.length, id).toBeGreaterThan(0);
+      // Either a key or a stated trigger, so the HUD can always show how it is set off.
+      expect(info.key.length + info.trigger.length, id).toBeGreaterThan(0);
+      expect(info.blurb.length, id).toBeGreaterThan(20);
+      for (const part of [info.lesson.use, info.lesson.does, info.lesson.tip]) expect(part.length, id).toBeGreaterThan(10);
+      if (info.key) expect(info.lesson.use, id).toContain(`[${info.key}]`);
+    }
+  });
+
+  test("each Act II ability is taught in exactly one chapter, the first that has it", () => {
+    const taught = LEVELS.flatMap((l) => lessonsFor(l.grants).map((info) => info.name));
+    expect(new Set(taught).size).toBe(taught.length);
+    expect(taught).toEqual(["Deep Listen", "Focus", "Lure Stone", "Muffle"]);
+    for (const [i, l] of LEVELS.entries()) {
+      for (const a of l.abilities ?? []) {
+        const first = LEVELS.findIndex((m) => (m.abilities ?? []).includes(a));
+        if (first === i) expect(l.grants ?? []).toContain(a);
+      }
+    }
+  });
+
+  test("Deep Listen sounds its cue once, when the ears have fully opened", () => {
+    const world = new World(parseLevel(level(HALL.map((r, y) => (y === 2 ? "#@............#" : r)), ["deepListen"])));
+    let cues = 0;
+    world.events.on("listen", () => cues++);
+    run(world, 3);
+    expect(cues).toBe(1);
+    run(world, 0.3, { moveX: 1 });
+    run(world, 3);
+    expect(cues).toBe(2);
+  });
+
+  test("a lure stone glows while it calls, and a plain stone does not", () => {
+    const map = ["################", "#@.............#", "#..............#", "################"];
+    for (const [abilities, glows] of [
+      [["lureStone"], true],
+      [[], false],
+    ] as const) {
+      const world = new World(parseLevel(level(map, [...abilities], {}, 1)));
+      world.update(1 / 60, { ...IDLE_INTENT, throwPressed: true, aimX: 7.5, aimY: 1.5 });
+      run(world, 2.5);
+      expect(world.stones[0]!.lureGlow > 0).toBe(glows);
+    }
   });
 });

@@ -99,6 +99,7 @@ export class AudioDirector {
     this.unsubscribe.push(
       ev.on("pulse", (e) => (e.aim ? s.focus(e.charge) : s.pulse(e.charge, echoTaps(world, e.x, e.y, 6 + e.charge * 8)))),
       ev.on("muffle", (e) => s.muffle(e.on)),
+      ev.on("listen", () => s.listen()),
       ev.on("lure", (e) => s.lure(e.x, e.y, e.left)),
       ev.on("step", (e) => s.footstep(e.x, e.y, e.water, e.sneak, e.silt)),
       ev.on("throw", (e) => s.whoosh(e.x, e.y)),

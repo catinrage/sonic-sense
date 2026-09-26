@@ -1,14 +1,14 @@
 import type { Input } from "./core/input";
 import type { Renderer } from "./render/renderer";
 import { Stage } from "./game/game";
-import { ABILITY_INFO, abilityViews } from "./game/abilities";
+import { ABILITY_INFO, abilityViews, lessonsFor } from "./game/abilities";
 import { callProfile } from "./game/calls";
 import { ACT_NAMES, DIORAMAS, LEVELS, SHOWCASE } from "./game/levels";
 import type { PlayerIntent } from "./game/entities/player";
 import { MAX_STONES } from "./game/entities/player";
 import { COLORS } from "./game/palette";
 import type { World } from "./game/world";
-import type { LevelDef, StartHint } from "./game/level-types";
+import type { Ability, LevelDef, StartHint } from "./game/level-types";
 import { AudioDirector } from "./audio/director";
 import { UI, type ChapterInfo, type EndingContent, type SettingKey, type VolumeBus } from "./ui/ui";
 import { loadSave, persist, type SaveData } from "./save";
@@ -18,7 +18,10 @@ const DEATH_DELAY = 2.2;
 const COMPLETE_DELAY = 2.6;
 const ATTRACT_PERIOD = 3.6;
 
-type Mode = "title" | "playing" | "paused" | "dying" | "completing" | "ending";
+type Mode = "title" | "playing" | "paused" | "learning" | "dying" | "completing" | "ending";
+
+/** Seconds into a chapter before a newly granted ability is taught (as its card fades). */
+const LESSON_DELAY = 3.4;
 
 const FINAL_EPILOGUE: EndingContent = {
   eyebrow: "Epilogue",
@@ -44,6 +47,8 @@ export class App {
   private levelIndex = 0;
   private levelTime = 0;
   private pendingHints: (StartHint & { at: number })[] = [];
+  /** Abilities this chapter grants that have not been taught yet. */
+  private lessons: Ability[] = [];
   private attract = { timer: 1.4, hold: 0, charge: 0 };
   private hudStones = -1;
   private hadStones = false;
@@ -71,6 +76,7 @@ export class App {
       onQuit: () => this.enterTitle(),
       onTitle: () => this.enterTitle(),
       onDescend: () => this.beginJourney(this.save.last),
+      onLearned: () => this.learned(),
       onVolume: (bus, v) => this.setVolume(bus, v),
       onSetting: (key, v) => this.setSetting(key, v),
       onUiSound: (kind) => (kind === "move" ? this.audio.sfx.uiMove() : this.audio.sfx.uiSelect()),
@@ -186,6 +192,7 @@ export class App {
         this.tickPlaying(dt);
         break;
       case "paused":
+      case "learning":
         break;
       case "dying":
         this.stage.update(dt);
@@ -214,6 +221,10 @@ export class App {
     this.stage.post.fade = Math.max(0, this.stage.post.fade - dt * 0.9);
     if (this.input.pressed("restart")) {
       this.restartLevel(false);
+      return;
+    }
+    if (this.lessons.length > 0 && this.levelTime >= LESSON_DELAY) {
+      this.teach();
       return;
     }
     this.stage.update(dt, this.stage.playerIntent());
@@ -263,7 +274,7 @@ export class App {
     this.startLevel(Math.max(0, Math.min(index, LEVELS.length - 1)), true);
   }
 
-  private startLevel(index: number, withCard: boolean): void {
+  private startLevel(index: number, withCard: boolean, teach = withCard): void {
     const def = LEVELS[index]!;
     this.levelIndex = index;
     this.mode = "playing";
@@ -283,10 +294,12 @@ export class App {
     this.hudStones = -1;
     this.hadStones = (def.stones ?? 0) > 0;
     this.toldNoStones = false;
-    const granted = (def.grants ?? []).map((id) => ABILITY_INFO[id]);
+    const granted = lessonsFor(def.grants);
     if (withCard) this.ui.card(`Chapter ${def.chapter}`, def.title, def.tagline, granted.map((g) => g.name).join(" \u00b7 "));
-    const grantHints = granted.map((g, i) => ({ text: g.blurb, duration: 7, at: 4.5 + i * 7.5 }));
-    this.pendingHints = withCard ? [...grantHints, ...(def.startHints ?? []).map((h) => ({ ...h, at: (h.delay ?? 1) + grantHints.length * 7.5 }))] : [];
+    // A new ability is taught on its own screen once the card fades; the chapter's own hints follow it.
+    this.lessons = teach ? [...(def.grants ?? [])] : [];
+    const after = this.lessons.length > 0 ? LESSON_DELAY : 0;
+    this.pendingHints = withCard ? (def.startHints ?? []).map((h) => ({ ...h, at: (h.delay ?? 1) + after })) : [];
     this.save.last = index;
     persist(this.save);
     document.getElementById("view")?.focus({ preventScroll: true });
@@ -343,8 +356,34 @@ export class App {
     if (this.mode !== "playing") return;
     this.mode = "paused";
     this.input.enabled = false;
-    this.ui.showPause();
+    const kit = (Object.keys(ABILITY_INFO) as Ability[]).filter((id) => this.stage.world.abilities.has(id));
+    this.ui.showPause(kit.map((id) => ABILITY_INFO[id]));
     this.audio.core.setVolume("sfx", this.save.volumes.sfx * 0.4);
+  }
+
+  /** Freeze the chapter and teach the next ability it grants. */
+  private teach(): void {
+    const id = this.lessons[0];
+    if (id === undefined) return;
+    this.mode = "learning";
+    this.input.enabled = false;
+    this.ui.clearHints();
+    this.ui.showLesson(id, ABILITY_INFO[id]);
+    this.audio.core.setVolume("sfx", this.save.volumes.sfx * 0.4);
+  }
+
+  private learned(): void {
+    if (this.mode !== "learning") return;
+    this.ui.hideLesson();
+    this.lessons.shift();
+    if (this.lessons.length > 0) {
+      this.teach();
+      return;
+    }
+    this.mode = "playing";
+    this.input.enabled = true;
+    this.audio.core.setVolume("sfx", this.save.volumes.sfx);
+    document.getElementById("view")?.focus({ preventScroll: true });
   }
 
   private resume(): void {
@@ -513,9 +552,9 @@ export class App {
     this.stage.post.fade = 0;
   }
 
-  debugLevel(index: number): void {
+  debugLevel(index: number, withLessons = false): void {
     this.ui.hideTitle();
-    this.startLevel(index, true);
+    this.startLevel(index, true, withLessons);
     this.stage.post.fade = 0;
   }
 

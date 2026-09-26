@@ -224,6 +224,13 @@ export class Stone {
   /** Chirps left once it lands (the Lure Stone ability). */
   lureLeft = 0;
   private lureTimer = 0;
+  /** 1 at each chirp, fading between them. */
+  private chirpFlash = 0;
+
+  /** How brightly a calling lure stone glows (0 once it has fallen quiet). */
+  get lureGlow(): number {
+    return this.lureLeft > 0 ? 0.35 + 0.65 * this.chirpFlash : this.chirpFlash * 0.5;
+  }
 
   constructor(
     public x: number,
@@ -280,11 +287,13 @@ export class Stone {
 
   /** A lure stone keeps calling where it lies: a decoy creatures come to investigate. */
   private chirp(dt: number, world: World): void {
+    this.chirpFlash = Math.max(0, this.chirpFlash - dt * 2.5);
     if (this.lureLeft <= 0) return;
     this.lureTimer -= dt;
     if (this.lureTimer > 0) return;
     this.lureTimer = LURE_PERIOD;
     this.lureLeft--;
+    this.chirpFlash = 1;
     world.emitSound({
       kind: "lure",
       x: this.x,

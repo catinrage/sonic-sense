@@ -202,7 +202,7 @@ void main() {
 `;
 
 
-/** A single pebble. uP[0]: height, resting, seed. */
+/** A single pebble. uP[0]: height, resting, seed, lure glow (a lure stone calling). */
 export const STONE_FS = /* glsl */ `${ENTITY_PRELUDE}
 void pebble(inout Surf s, vec2 p, vec2 c, vec2 r, float seed, float px) {
   vec2 q = p - c;
@@ -223,6 +223,12 @@ void main() {
     over(s, vec3(0.0), vec3(0.0, 0.0, 1.0), vec3(0.0), 0.0, 8.0, (1.0 - smoothstep(-0.04, 0.03, sh)) * 0.5);
   }
   pebble(s, p, vec2(0.0), vec2(0.075, 0.06), uP[0].z, px);
+  float lure = uP[0].w;
+  if (lure > 0.0) {
+    vec3 warm = vec3(0.95, 0.95, 0.8);
+    s.emi += warm * lure * 0.9 * (1.0 - smoothstep(0.0, 0.08, length(p)));
+    gHalo = warm * exp(-length(p) * 18.0) * lure * 0.9;
+  }
   outColor = finish(s, 0.7, vec3(0.0));
 }
 `;

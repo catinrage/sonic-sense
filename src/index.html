@@ -88,6 +88,19 @@
         <p class="card-grant" data-bind="card-grant" hidden></p>
       </section>
 
+      <!-- A newly granted ability, taught before the chapter goes on -->
+      <section id="ability" class="screen screen--panel screen--ability" aria-label="New ability" hidden>
+        <div class="lesson">
+          <p class="eyebrow lesson-eyebrow">New ability</p>
+          <div class="lesson-glyph" data-bind="ability-glyph" aria-hidden="true"></div>
+          <h2 class="lesson-title" data-bind="ability-title"></h2>
+          <p class="lesson-use" data-bind="ability-use"></p>
+          <p class="lesson-does" data-bind="ability-does"></p>
+          <p class="lesson-tip" data-bind="ability-tip"></p>
+          <button class="menu-item" data-action="learned"><span class="menu-ring"></span><span class="menu-label">Understood</span></button>
+        </div>
+      </section>
+
       <!-- Death / completion message -->
       <section id="message" class="message" aria-live="assertive" hidden>
         <h2 class="message-title" data-bind="message-title"></h2>
@@ -104,6 +117,7 @@
             <button class="menu-item" data-action="settings"><span class="menu-ring"></span><span class="menu-label">Sound &amp; Sight</span></button>
             <button class="menu-item" data-action="quit"><span class="menu-ring"></span><span class="menu-label">Leave to title</span></button>
           </nav>
+          <div class="pause-kit" data-bind="pause-kit" hidden></div>
         </div>
       </section>
 

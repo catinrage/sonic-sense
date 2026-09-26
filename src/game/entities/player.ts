@@ -67,6 +67,8 @@ export class Player {
   /** Deep Listen depth: 0 .. 1 while the creature stands still and silent. */
   listen = 0;
   private stillFor = 0;
+  /** Set once the ears have fully opened, so the cue sounds once per stillness. */
+  private listenCued = false;
   /** Seconds of Muffle left, and until it can be used again. */
   muffleLeft = 0;
   muffleCooldown = 0;
@@ -223,6 +225,12 @@ export class Player {
     const still = Math.hypot(this.vx, this.vy) < 0.15 && !this.charging;
     this.stillFor = still ? this.stillFor + dt : 0;
     this.listen = this.stillFor > LISTEN_DELAY ? Math.min(1, this.listen + dt / LISTEN_RISE) : Math.max(0, this.listen - dt * 4);
+    if (this.listen >= 1 && !this.listenCued) {
+      this.listenCued = true;
+      world.events.emit("listen", { x: this.x, y: this.y });
+    } else if (this.listen <= 0) {
+      this.listenCued = false;
+    }
     if (this.listen > 0.5) {
       this.earTargetL = -0.35;
       this.earTargetR = 0.35;

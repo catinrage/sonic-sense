@@ -1,4 +1,5 @@
-import type { AbilityView } from "../game/abilities";
+import type { AbilityInfo, AbilityView } from "../game/abilities";
+import type { Ability } from "../game/level-types";
 
 export type VolumeBus = "master" | "sfx" | "music";
 export type SettingKey = "shake" | "gentle";
@@ -15,6 +16,8 @@ export interface UIHandlers {
   onTitle(): void;
   /** Continue past an act's interlude into the next chapter. */
   onDescend(): void;
+  /** The player has read a new ability's lesson. */
+  onLearned(): void;
   onVolume(bus: VolumeBus, value: number): void;
   onSetting(key: SettingKey, value: boolean): void;
   onUiSound(kind: "move" | "select"): void;
@@ -44,7 +47,15 @@ export interface SettingsState {
   gentle: boolean;
 }
 
-type Panel = "title" | "chapters" | "settings" | "pause" | "ending";
+type Panel = "title" | "chapters" | "settings" | "pause" | "ending" | "ability";
+
+/** Line-art glyph for each ability, drawn in the current text colour. */
+const ABILITY_GLYPHS: Readonly<Record<Ability, string>> = {
+  deepListen: `<circle cx="32" cy="32" r="3.5" fill="currentColor"/><path d="M45 19a18 18 0 0 1 0 26M51 13a26 26 0 0 1 0 38M19 19a18 18 0 0 0 0 26M13 13a26 26 0 0 0 0 38" opacity=".55"/><path d="M40 25l4-4M40 39l4 4M24 25l-4-4M24 39l-4 4"/>`,
+  focus: `<circle cx="12" cy="32" r="3.5" fill="currentColor"/><path d="M16 30l38-11M16 34l38 11"/><path d="M34 26a14 14 0 0 1 0 12M46 22a22 22 0 0 1 0 20" opacity=".55"/>`,
+  lureStone: `<ellipse cx="32" cy="44" rx="11" ry="7" fill="currentColor" opacity=".35"/><ellipse cx="32" cy="44" rx="11" ry="7"/><path d="M26 30a9 9 0 0 1 12 0M21 24a16 16 0 0 1 22 0M16 18a23 23 0 0 1 32 0" opacity=".6"/>`,
+  muffle: `<ellipse cx="32" cy="40" rx="8" ry="7" fill="currentColor" opacity=".35"/><circle cx="22" cy="28" r="3.5"/><circle cx="32" cy="24" r="3.5"/><circle cx="42" cy="28" r="3.5"/><path d="M12 52L52 12"/>`,
+};
 
 const escapeHtml = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -66,7 +77,7 @@ export class UI {
     private readonly root: HTMLElement,
     private readonly handlers: UIHandlers,
   ) {
-    for (const id of ["title", "chapters", "settings", "hud", "card", "message", "pause", "ending", "curtain"]) {
+    for (const id of ["title", "chapters", "settings", "hud", "card", "message", "pause", "ending", "ability", "curtain"]) {
       const node = document.getElementById(id);
       if (!node) throw new Error(`UI: missing #${id}`);
       this.el[id] = node;
@@ -163,8 +174,36 @@ export class UI {
     this.openPanel("settings");
   }
 
-  showPause(): void {
+  /** Pause, listing the abilities this chapter is played with so they can be re-read. */
+  showPause(kit: readonly AbilityInfo[] = []): void {
+    const box = this.bind("pause-kit");
+    box.hidden = kit.length === 0;
+    box.replaceChildren(
+      ...kit.map((a) => {
+        const row = document.createElement("div");
+        row.className = "kit-row";
+        row.innerHTML = `<p class="kit-name">${a.key ? `<kbd>${escapeHtml(a.key)}</kbd>` : `<span class="ability-trigger">${escapeHtml(a.trigger)}</span>`}${escapeHtml(a.name)}</p><p class="kit-blurb">${escapeHtml(a.blurb)}</p>`;
+        return row;
+      }),
+    );
     this.openPanel("pause");
+  }
+
+  /** Teach a newly granted ability on its own screen; the chapter waits until it is dismissed. */
+  showLesson(id: Ability, info: AbilityInfo): void {
+    this.bind("ability-glyph").innerHTML = `<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">${ABILITY_GLYPHS[id]}</svg>`;
+    this.bind("ability-title").textContent = info.name;
+    this.bind("ability-use").innerHTML = formatHint(info.lesson.use);
+    this.bind("ability-does").textContent = info.lesson.does;
+    this.bind("ability-tip").textContent = info.lesson.tip;
+    this.el.card!.hidden = true;
+    this.cardTimer = 0;
+    this.openPanel("ability");
+  }
+
+  hideLesson(): void {
+    this.el.ability!.hidden = true;
+    this.panelStack = this.panelStack.filter((p) => p !== "ability");
   }
 
   hidePause(): void {
@@ -175,7 +214,7 @@ export class UI {
 
   showEnding(content: EndingContent): void {
     this.hideHud();
-    for (const id of ["title", "chapters", "settings", "pause", "card", "message"]) this.el[id]!.hidden = true;
+    for (const id of ["title", "chapters", "settings", "pause", "card", "message", "ability"]) this.el[id]!.hidden = true;
     this.bind("ending-eyebrow").textContent = content.eyebrow;
     this.bind("ending-title").textContent = content.title;
     this.bind("ending-text").textContent = content.text;
@@ -278,6 +317,11 @@ export class UI {
             const key = document.createElement("kbd");
             key.textContent = v.key;
             chip.append(key);
+          } else if (v.trigger) {
+            const trigger = document.createElement("span");
+            trigger.className = "ability-trigger";
+            trigger.textContent = v.trigger;
+            chip.append(trigger);
           }
           const name = document.createElement("span");
           name.className = "ability-name";
@@ -360,6 +404,11 @@ export class UI {
     if (top === "pause") {
       this.panelStack.push("pause");
       this.handlers.onResume();
+      return;
+    }
+    if (top === "ability") {
+      this.panelStack.push("ability");
+      this.handlers.onLearned();
       return;
     }
     if (top === "title" || top === "ending") {
@@ -461,6 +510,9 @@ export class UI {
         break;
       case "descend":
         this.handlers.onDescend();
+        break;
+      case "learned":
+        this.handlers.onLearned();
         break;
     }
   };

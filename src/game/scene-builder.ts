@@ -32,7 +32,7 @@ export class SceneBuilder {
     }
     for (const s of world.stones) {
       const z = Math.max(0.02, s.z);
-      this.add("stone", s.x, s.y, z, s.spin, 0.2, 0.2, 3 + s.y * 0.001, [z, s.resting ? 1 : 0, s.x * 7.3, 0]);
+      this.add("stone", s.x, s.y, z, s.spin, 0.2, 0.2, 3 + s.y * 0.001, [z, s.resting ? 1 : 0, s.x * 7.3, s.lureGlow]);
     }
     for (const s of world.shards) {
       if (s.collected && s.collectT > 0.6) continue;

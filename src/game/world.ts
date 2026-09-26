@@ -17,6 +17,8 @@ import { WaveSystem, type Wave, type WaveSpec } from "./waves";
 export interface WorldEvents {
   pulse: { x: number; y: number; charge: number; aim: Vec2 | null };
   muffle: { x: number; y: number; on: boolean };
+  /** Deep Listen has fully opened the creature's ears. */
+  listen: { x: number; y: number };
   lure: { x: number; y: number; left: number };
   step: { x: number; y: number; water: boolean; silt: boolean; sneak: boolean };
   noStones: { x: number; y: number };
