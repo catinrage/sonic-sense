@@ -2,20 +2,23 @@ import type { Input } from "./core/input";
 import type { Renderer } from "./render/renderer";
 import { Stage } from "./game/game";
 import { ABILITY_INFO, abilityViews } from "./game/abilities";
-import { CODEX_INFO, codexOf } from "./game/codex";
+import { CODEX_INFO } from "./game/codex";
 import { callProfile } from "./game/calls";
 import { ACT_NAMES, DIORAMAS, LEVELS, SHOWCASE } from "./game/levels";
 import type { PlayerIntent } from "./game/entities/player";
 import { MAX_STONES } from "./game/entities/player";
 import { COLORS } from "./game/palette";
 import type { World } from "./game/world";
-import type { Ability, CodexId, LevelDef, StartHint } from "./game/level-types";
+import type { LevelDef, StartHint } from "./game/level-types";
 import { AudioDirector } from "./audio/director";
-import { UI, type ChapterInfo, type EndingContent, type KitRow, type LessonView, type SettingKey, type VolumeBus } from "./ui/ui";
-import { ABILITY_GLYPHS, CODEX_GLYPHS } from "./ui/glyphs";
+import { UI, type ChapterInfo, type EndingContent, type LessonView, type SettingKey, type VolumeBus } from "./ui/ui";
+import { chapterKit, chapterNews, type ChapterKit } from "./ui/lessons";
 import { loadSave, persist, type SaveData } from "./save";
 import { TITLE_CAMERA_OFFSET, TITLE_FACING } from "./game/title";
 import type { Loader } from "./loader/loader";
+import { BESTIARY, firstMet } from "./game/bestiary";
+import { BestiaryShow } from "./game/bestiary-show";
+import type { BestiaryPage } from "./ui/bestiary-view";
 
 const MAX_DT = 1 / 20;
 const DEATH_DELAY = 2.2;
@@ -24,7 +27,7 @@ const ATTRACT_PERIOD = 3.6;
 /** Matches the curtain's CSS fade. */
 const CURTAIN_FADE_MS = 1600;
 
-type Mode = "title" | "playing" | "paused" | "learning" | "dying" | "completing" | "ending";
+type Mode = "title" | "playing" | "paused" | "learning" | "dying" | "completing" | "ending" | "bestiary";
 
 /** Seconds into a chapter before a newly granted ability is taught (as its card fades). */
 const LESSON_DELAY = 3.4;
@@ -36,16 +39,6 @@ const FINAL_EPILOGUE: EndingContent = {
   action: { label: "Return to title", id: "title" },
   interlude: false,
 };
-
-function abilityLesson(id: Ability): LessonView {
-  const info = ABILITY_INFO[id];
-  return { eyebrow: "New ability", glyph: ABILITY_GLYPHS[id], title: info.name, ...info.lesson };
-}
-
-function codexLesson(id: CodexId): LessonView {
-  const info = CODEX_INFO[id];
-  return { eyebrow: info.kind === "Creature" ? "In the Instrument \u00b7 a creature" : "In the Instrument", glyph: CODEX_GLYPHS[id], title: info.name, ...info.lesson };
-}
 
 /** What the chapter card announces as new. */
 function newsOf(def: LevelDef): string {
@@ -73,6 +66,8 @@ export class App {
   private pendingHints: (StartHint & { at: number })[] = [];
   /** What this chapter brings for the first time that has not been taught yet. */
   private lessons: LessonView[] = [];
+  /** Lessons being read again (with H, or from the pause menu), and the mode to go back to. */
+  private revisit: { from: "playing" | "paused"; lessons: LessonView[]; index: number } | null = null;
   private attract = { timer: 1.4, hold: 0, charge: 0 };
   private hudStones = -1;
   private hadStones = false;
@@ -84,6 +79,12 @@ export class App {
   /** Shaders are built; the loading scene is sounding its last chord. */
   private revealing = false;
   private worldUnsub: (() => void)[] = [];
+  /** The bestiary's stage, the menu it was opened from, and its pages as the player knows them. */
+  private readonly bestiary: BestiaryShow;
+  private bestiaryFrom: "title" | "paused" = "title";
+  private bestiaryPages: BestiaryPage[] = [];
+  /** Debug: every page of the bestiary open, as if every creature had been heard. */
+  private knowAll = false;
 
   constructor(
     private readonly renderer: Renderer,
@@ -91,6 +92,7 @@ export class App {
     private readonly loader: Loader | null = null,
   ) {
     this.stage = new Stage(renderer, input);
+    this.bestiary = new BestiaryShow(this.stage, () => renderer.width / Math.max(1, renderer.height));
     this.save = loadSave();
     this.ui = new UI(document.getElementById("ui")!, {
       onPlay: () => this.beginJourney(0),
@@ -104,6 +106,12 @@ export class App {
       onTitle: () => this.enterTitle(),
       onDescend: () => this.beginJourney(this.save.last),
       onLearned: () => this.learned(),
+      onOpenLesson: (i) => this.readAgain(i),
+      onLessonPage: (step) => this.pageLesson(step),
+      onOpenBestiary: () => this.openBestiary(),
+      onBestiaryPick: (i) => this.showCreature(i, true),
+      onBestiaryCall: () => this.callCreature(),
+      onBestiaryClose: () => this.closeBestiary(),
       onVolume: (bus, v) => this.setVolume(bus, v),
       onSetting: (key, v) => this.setSetting(key, v),
       onUiSound: (kind) => (kind === "move" ? this.audio.sfx.uiMove() : this.audio.sfx.uiSelect()),
@@ -245,6 +253,9 @@ export class App {
       case "paused":
       case "learning":
         break;
+      case "bestiary":
+        this.bestiary.update(dt, this.ui.bestiary.stageRect());
+        break;
       case "dying":
         this.stage.update(dt);
         if (this.modeT > DEATH_DELAY) this.restartLevel(false);
@@ -314,6 +325,8 @@ export class App {
     this.stage.post.fade = 1;
     this.attract = { timer: 1.2, hold: 0, charge: 0 };
     this.ui.showTitle(this.continueMeta());
+    const pages = this.readBestiary();
+    this.ui.setBestiaryMeta(`${pages.filter((p) => p.known).length} of ${pages.length}`);
   }
 
   private beginJourney(index: number): void {
@@ -341,14 +354,16 @@ export class App {
     this.ui.clearMessage();
     this.ui.clearHints();
     this.ui.hideLesson();
+    this.revisit = null;
     this.ui.showHud(def.chapter, def.title);
+    this.ui.setLessonsKey(this.kit().lessons.length > 0);
     this.ui.setShards(0, world.shards.length);
     this.hudStones = -1;
     this.hadStones = (def.stones ?? 0) > 0;
     this.toldNoStones = false;
     if (withCard) this.ui.card(`Chapter ${def.chapter}`, def.title, def.tagline, newsOf(def));
     // Each new thing is taught on its own screen once the card fades; the chapter's own hints follow.
-    this.lessons = teach ? [...(def.grants ?? []).map(abilityLesson), ...(def.introduces ?? []).map(codexLesson)] : [];
+    this.lessons = teach ? chapterNews(def) : [];
     const after = this.lessons.length > 0 ? LESSON_DELAY : 0;
     this.pendingHints = withCard ? (def.startHints ?? []).map((h) => ({ ...h, at: (h.delay ?? 1) + after })) : [];
     this.save.last = index;
@@ -407,13 +422,43 @@ export class App {
     if (this.mode !== "playing") return;
     this.mode = "paused";
     this.input.enabled = false;
-    const world = this.stage.world;
-    const kit: KitRow[] = (Object.keys(ABILITY_INFO) as Ability[])
-      .filter((id) => world.abilities.has(id))
-      .map((id) => ({ ...ABILITY_INFO[id], tag: ABILITY_INFO[id].trigger }));
-    for (const id of codexOf(world.level)) kit.push({ name: CODEX_INFO[id].name, key: "", tag: CODEX_INFO[id].kind, blurb: CODEX_INFO[id].blurb });
-    this.ui.showPause(kit);
+    this.ui.showPause(this.kit().rows);
     this.audio.core.setVolume("sfx", this.save.volumes.sfx * 0.4);
+  }
+
+  /** Everything the chapter is played with, as pause-menu rows and as their lessons. */
+  private kit(): ChapterKit {
+    const world = this.stage.world;
+    return chapterKit(LEVELS[this.levelIndex]!, world.abilities, world.level);
+  }
+
+  /** Open a lesson again: row `index` of the pause menu's kit, or (null) the chapter's own news. */
+  private readAgain(index: number | null): void {
+    const from = this.mode;
+    if (from !== "playing" && from !== "paused") return;
+    const kit = this.kit();
+    if (kit.lessons.length === 0) return;
+    this.revisit = { from, lessons: kit.lessons, index: Math.min(index ?? kit.fresh, kit.lessons.length - 1) };
+    this.mode = "learning";
+    this.input.enabled = false;
+    if (from === "playing") {
+      this.ui.clearHints();
+      this.audio.core.setVolume("sfx", this.save.volumes.sfx * 0.4);
+    }
+    this.showRevisit();
+  }
+
+  private showRevisit(): void {
+    const r = this.revisit;
+    if (r) this.ui.showLesson(r.lessons[r.index]!, { index: r.index, count: r.lessons.length });
+  }
+
+  private pageLesson(step: number): void {
+    const r = this.revisit;
+    if (!r || this.mode !== "learning" || r.lessons.length < 2) return;
+    this.revisit = { ...r, index: (r.index + step + r.lessons.length) % r.lessons.length };
+    this.audio.sfx.uiMove();
+    this.showRevisit();
   }
 
   /** Freeze the chapter and teach the next new thing it brings. */
@@ -430,30 +475,42 @@ export class App {
   private learned(): void {
     if (this.mode !== "learning") return;
     this.ui.hideLesson();
+    const again = this.revisit;
+    if (again) {
+      this.revisit = null;
+      // Back to the pause menu it was opened from (still there, beneath), or straight back to the dark.
+      if (again.from === "paused") this.mode = "paused";
+      else this.backToPlay();
+      return;
+    }
     this.lessons.shift();
     if (this.lessons.length > 0) {
       this.teach();
       return;
     }
-    this.mode = "playing";
-    this.input.enabled = true;
-    this.audio.core.setVolume("sfx", this.save.volumes.sfx);
-    document.getElementById("view")?.focus({ preventScroll: true });
+    this.backToPlay();
   }
 
   private resume(): void {
     if (this.mode !== "paused") return;
+    this.ui.hidePause();
+    this.backToPlay();
+  }
+
+  private backToPlay(): void {
     this.mode = "playing";
     this.input.enabled = true;
-    this.ui.hidePause();
     this.audio.core.setVolume("sfx", this.save.volumes.sfx);
     document.getElementById("view")?.focus({ preventScroll: true });
   }
 
   private onKey = (e: KeyboardEvent): void => {
     // The UI consumes Escape itself when a menu is open (e.g. to resume).
-    if (e.defaultPrevented || (e.code !== "Escape" && e.code !== "KeyP")) return;
-    if (this.mode === "playing") {
+    if (e.defaultPrevented || this.mode !== "playing") return;
+    if (e.code === "KeyH" && !e.repeat) {
+      e.preventDefault();
+      this.readAgain(null);
+    } else if (e.code === "Escape" || e.code === "KeyP") {
       e.preventDefault();
       this.pause();
     }
@@ -521,6 +578,62 @@ export class App {
       a.hold = a.charge * 1.15;
     }
     return base;
+  }
+
+  // ------------------------------------------------------------ bestiary
+
+  /** Every creature, known once the player has reached the chapter it is first heard in. */
+  private readBestiary(): BestiaryPage[] {
+    const met = firstMet();
+    return BESTIARY.map((entry) => {
+      const at = met.get(entry.id);
+      const def = at === undefined ? undefined : LEVELS[at];
+      const known = at !== undefined && (this.knowAll || at <= this.save.unlocked);
+      return { entry, known, chapter: def ? { numeral: def.chapter, title: def.title } : null };
+    });
+  }
+
+  private openBestiary(): void {
+    if (this.mode !== "title" && this.mode !== "paused") return;
+    this.bestiaryFrom = this.mode;
+    this.mode = "bestiary";
+    this.modeT = 0;
+    this.bestiaryPages = this.readBestiary();
+    // Open on the creature met most recently.
+    const latest = this.bestiaryPages.reduce((at, p, i) => (p.known ? i : at), 0);
+    this.ui.showBestiary(this.bestiaryPages, latest);
+    this.audio.core.setVolume("sfx", this.save.volumes.sfx);
+    this.showCreature(latest, false);
+  }
+
+  /** Turn to page `index`: its creature takes the stage. */
+  private showCreature(index: number, picked: boolean): void {
+    const page = this.bestiaryPages[index];
+    if (this.mode !== "bestiary" || !page) return;
+    if (picked) {
+      this.audio.sfx.uiMove();
+      this.ui.bestiary.select(index);
+    }
+    const world = this.bestiary.show(page.known ? page.entry : null, this.ui.bestiary.stageRect());
+    this.audio.attach(world);
+  }
+
+  private callCreature(): void {
+    const page = this.bestiaryPages[this.ui.bestiary.index];
+    if (this.mode !== "bestiary" || !page) return;
+    const answer = this.bestiary.call();
+    if (answer === null) return;
+    this.ui.bestiary.caption(answer === "empty" ? "Nothing answers. Not yet." : page.entry.heard);
+  }
+
+  private closeBestiary(): void {
+    if (this.mode !== "bestiary") return;
+    const world = this.bestiary.close();
+    if (world) this.audio.attach(world);
+    this.ui.hideBestiary();
+    this.mode = this.bestiaryFrom;
+    // The pause menu keeps the world's sounds low, as it did before.
+    if (this.mode === "paused") this.audio.core.setVolume("sfx", this.save.volumes.sfx * 0.4);
   }
 
   // ------------------------------------------------------------ settings
@@ -611,6 +724,15 @@ export class App {
     this.ui.hideTitle();
     this.startLevel(index, true, withLessons);
     this.stage.post.fade = 0;
+  }
+
+  /** Open the bestiary from the title on page `index`, every page known unless told otherwise. */
+  debugBestiary(index: number, knowAll = true): void {
+    this.knowAll = knowAll;
+    if (this.mode !== "bestiary") this.openBestiary();
+    this.bestiaryPages = this.readBestiary();
+    this.ui.bestiary.render(this.bestiaryPages, index);
+    this.showCreature(index, false);
   }
 
   debugPlayer(): { x: number; y: number } {

@@ -1,4 +1,6 @@
 import type { AbilityView } from "../game/abilities";
+import { BestiaryView, type BestiaryPage } from "./bestiary-view";
+import { escapeHtml } from "./html";
 
 export type VolumeBus = "master" | "sfx" | "music";
 export type SettingKey = "shake" | "gentle";
@@ -17,6 +19,16 @@ export interface UIHandlers {
   onDescend(): void;
   /** The player has read a lesson screen. */
   onLearned(): void;
+  /** Read again the lesson of the pause menu's kit row `index`. */
+  onOpenLesson(index: number): void;
+  /** Page through the lessons being read again. */
+  onLessonPage(step: number): void;
+  onOpenBestiary(): void;
+  /** Turn the bestiary to creature `index`. */
+  onBestiaryPick(index: number): void;
+  /** Call to the creature on the bestiary's stage. */
+  onBestiaryCall(): void;
+  onBestiaryClose(): void;
   onVolume(bus: VolumeBus, value: number): void;
   onSetting(key: SettingKey, value: boolean): void;
   onUiSound(kind: "move" | "select"): void;
@@ -67,17 +79,11 @@ export interface SettingsState {
   gentle: boolean;
 }
 
-const PANELS = ["title", "chapters", "settings", "pause", "ending", "ability"] as const;
+const PANELS = ["title", "chapters", "settings", "pause", "ending", "ability", "bestiary"] as const;
 type Panel = (typeof PANELS)[number];
-
-
-
-const escapeHtml = (s: string): string =>
-  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 /** Hint text supports [Key] tokens rendered as keycaps. */
 export const formatHint = (text: string): string => escapeHtml(text).replace(/\[([^\]]+)\]/g, "<kbd>$1</kbd>");
-
 
 /** DOM overlay: menus, HUD, chapter cards and messages. */
 export class UI {
@@ -87,17 +93,28 @@ export class UI {
   private hintTimer = 0;
   private cardTimer = 0;
   private hintQueue: { text: string; duration: number }[] = [];
+  /** Lessons being read again can be paged with ← →. */
+  private lessonPaging = false;
+  /** What had focus before a lesson covered its panel, to give it back after. */
+  private lessonReturn: HTMLElement | null = null;
+  /** And before the bestiary opened over the title or the pause menu. */
+  private bestiaryReturn: HTMLElement | null = null;
+  readonly bestiary: BestiaryView;
 
   constructor(
     private readonly root: HTMLElement,
     private readonly handlers: UIHandlers,
   ) {
-    for (const id of ["title", "chapters", "settings", "hud", "card", "message", "pause", "ending", "ability", "curtain"]) {
+    for (const id of ["title", "chapters", "settings", "hud", "card", "message", "pause", "ending", "ability", "bestiary", "curtain"]) {
       const node = document.getElementById(id);
       if (!node) throw new Error(`UI: missing #${id}`);
       this.el[id] = node;
     }
     root.querySelectorAll<HTMLElement>("[data-bind]").forEach((n) => this.binds.set(n.dataset.bind!, n));
+    this.bestiary = new BestiaryView(this.el.bestiary!, {
+      onPick: (i) => handlers.onBestiaryPick(i),
+      onCall: () => handlers.onBestiaryCall(),
+    });
     root.addEventListener("click", this.onClick);
     root.addEventListener("mouseover", this.onHover);
     root.querySelectorAll<HTMLInputElement>("input[data-volume]").forEach((input) => {
@@ -189,37 +206,100 @@ export class UI {
     this.openPanel("settings");
   }
 
-  /** Pause, listing the abilities this chapter is played with so they can be re-read. */
+  /** Pause, listing what this chapter is played with; each row opens its lesson again. */
   showPause(kit: readonly KitRow[] = []): void {
     const box = this.bind("pause-kit");
     box.hidden = kit.length === 0;
+    const caption = document.createElement("p");
+    caption.className = "kit-caption";
+    caption.innerHTML = "Choose one to read its lesson again &mdash; or press <kbd>H</kbd> while playing";
     box.replaceChildren(
-      ...kit.map((a) => {
-        const row = document.createElement("div");
+      caption,
+      ...kit.map((a, i) => {
+        const row = document.createElement("button");
         row.className = "kit-row";
-        row.innerHTML = `<p class="kit-name">${a.key ? `<kbd>${escapeHtml(a.key)}</kbd>` : `<span class="ability-trigger">${escapeHtml(a.tag)}</span>`}${escapeHtml(a.name)}</p><p class="kit-blurb">${escapeHtml(a.blurb)}</p>`;
+        row.dataset.lesson = String(i);
+        const tag = a.key ? `<kbd>${escapeHtml(a.key)}</kbd>` : `<span class="ability-trigger">${escapeHtml(a.tag)}</span>`;
+        row.innerHTML = `<span class="kit-name">${tag}${escapeHtml(a.name)}<span class="kit-more" aria-hidden="true">Lesson</span></span><span class="kit-blurb">${escapeHtml(a.blurb)}</span>`;
         return row;
       }),
     );
     this.openPanel("pause");
   }
 
-  /** Teach something new on its own screen; the chapter waits until it is dismissed. */
-  showLesson(view: LessonView): void {
+  /**
+   * A lesson on its own screen; the chapter waits until it is dismissed. With
+   * `pager`, it is being read again and ← → turn to the others.
+   */
+  showLesson(view: LessonView, pager: { index: number; count: number } | null = null): void {
+    const again = this.topPanel === "ability";
+    if (!again) this.lessonReturn = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     this.bind("ability-eyebrow").textContent = view.eyebrow;
     this.bind("ability-glyph").innerHTML = `<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">${view.glyph}</svg>`;
     this.bind("ability-title").textContent = view.title;
     this.bind("ability-use").innerHTML = formatHint(view.use);
     this.bind("ability-does").textContent = view.does;
     this.bind("ability-tip").textContent = view.tip;
+    this.lessonPaging = pager !== null && pager.count > 1;
+    this.bind("lesson-pager").hidden = !this.lessonPaging;
+    this.bind("lesson-count").textContent = pager ? `${pager.index + 1} / ${pager.count}` : "";
+    // First time through, say where it can be found again.
+    this.bind("lesson-again").hidden = pager !== null;
     this.el.card!.hidden = true;
     this.cardTimer = 0;
+    if (again) {
+      const lesson = this.bind("lesson");
+      lesson.style.animation = "none";
+      void lesson.offsetWidth;
+      lesson.style.animation = "";
+    }
     this.openPanel("ability");
   }
 
   hideLesson(): void {
+    const open = this.panelStack.includes("ability");
     this.el.ability!.hidden = true;
     this.panelStack = this.panelStack.filter((p) => p !== "ability");
+    this.lessonPaging = false;
+    const under = this.topPanel;
+    if (!open || !under) return;
+    // Back to the pause menu it was opened from, on the row that opened it.
+    const back = this.lessonReturn;
+    this.lessonReturn = null;
+    if (back && this.el[under]!.contains(back)) requestAnimationFrame(() => back.focus({ preventScroll: true }));
+    else this.focusFirst(this.el[under]!);
+  }
+
+  /** Open the bestiary over the title or the pause menu, on page `selected`. */
+  showBestiary(pages: readonly BestiaryPage[], selected: number): void {
+    this.bestiaryReturn = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    this.bestiary.render(pages, selected);
+    // The chapter's HUD has no place over the bestiary's open stage.
+    this.el.hud!.classList.add("is-away");
+    this.openPanel("bestiary");
+    requestAnimationFrame(() => this.bestiary.step(0));
+  }
+
+  hideBestiary(): void {
+    this.el.bestiary!.hidden = true;
+    this.el.hud!.classList.remove("is-away");
+    this.panelStack = this.panelStack.filter((p) => p !== "bestiary");
+    const under = this.topPanel;
+    const back = this.bestiaryReturn;
+    this.bestiaryReturn = null;
+    if (!under) return;
+    if (back && this.el[under]!.contains(back)) requestAnimationFrame(() => back.focus({ preventScroll: true }));
+    else this.focusFirst(this.el[under]!);
+  }
+
+  /** How many creatures have been heard, beside the title menu's Bestiary. */
+  setBestiaryMeta(text: string): void {
+    this.bind("bestiary-meta").textContent = text;
+  }
+
+  /** The HUD's reminder that this chapter's lessons can be read again. */
+  setLessonsKey(visible: boolean): void {
+    this.bind("hud-lessons").hidden = !visible;
   }
 
   hidePause(): void {
@@ -383,6 +463,7 @@ export class UI {
 
   update(dt: number): void {
     this.syncCovered();
+    this.bestiary.update(dt);
     if (this.hintTimer > 0) {
       this.hintTimer -= dt;
       if (this.hintTimer <= 0.5 && this.hintTimer + dt > 0.5) this.bind("hud-hint").classList.remove("is-visible");
@@ -437,6 +518,11 @@ export class UI {
       this.handlers.onLearned();
       return;
     }
+    if (top === "bestiary") {
+      this.panelStack.push("bestiary");
+      this.handlers.onBestiaryClose();
+      return;
+    }
     if (top === "title" || top === "ending") {
       this.panelStack.push(top);
       return;
@@ -472,6 +558,12 @@ export class UI {
     }
     const vertical = e.code === "ArrowDown" || e.code === "ArrowUp" || e.code === "KeyS" || e.code === "KeyW";
     const horizontal = e.code === "ArrowRight" || e.code === "ArrowLeft";
+    if (horizontal && top === "ability" && this.lessonPaging) {
+      e.preventDefault();
+      this.handlers.onLessonPage(e.code === "ArrowRight" ? 1 : -1);
+      return;
+    }
+    if (top === "bestiary" && this.bestiaryKey(e, vertical || horizontal)) return;
     if (!vertical && !(horizontal && top === "chapters")) return;
     const active = document.activeElement as HTMLElement | null;
     if (active instanceof HTMLInputElement && active.type === "range" && horizontal) return;
@@ -485,8 +577,22 @@ export class UI {
     this.handlers.onUiSound("move");
   };
 
+  /** The bestiary: arrows turn its pages, Space calls to the creature on its stage. */
+  private bestiaryKey(e: KeyboardEvent, arrow: boolean): boolean {
+    if (e.code === "Space") {
+      e.preventDefault();
+      if (!e.repeat) this.handlers.onBestiaryCall();
+      return true;
+    }
+    if (!arrow) return false;
+    e.preventDefault();
+    const back = e.code === "ArrowUp" || e.code === "KeyW" || e.code === "ArrowLeft";
+    this.handlers.onBestiaryPick(this.bestiary.step(back ? -1 : 1));
+    return true;
+  }
+
   private onHover = (e: Event): void => {
-    const target = (e.target as HTMLElement).closest<HTMLElement>(".menu-item, .chapter:not([disabled])");
+    const target = (e.target as HTMLElement).closest<HTMLElement>(".menu-item, .kit-row, .beast-tab, .chapter:not([disabled])");
     if (target && document.activeElement !== target) {
       target.focus({ preventScroll: true });
       this.handlers.onUiSound("move");
@@ -503,6 +609,12 @@ export class UI {
       this.handlers.onChapter(Number(chapter.dataset.chapter));
       return;
     }
+    const lesson = target.closest<HTMLElement>("[data-lesson]");
+    if (lesson) {
+      this.handlers.onUiSound("select");
+      this.handlers.onOpenLesson(Number(lesson.dataset.lesson));
+      return;
+    }
     const action = target.closest<HTMLElement>("[data-action]")?.dataset.action;
     if (!action) return;
     this.handlers.onUiSound("select");
@@ -515,6 +627,9 @@ export class UI {
         break;
       case "chapters":
         this.handlers.onOpenChapters();
+        break;
+      case "bestiary":
+        this.handlers.onOpenBestiary();
         break;
       case "settings":
         this.handlers.onOpenSettings();
@@ -539,6 +654,10 @@ export class UI {
         break;
       case "learned":
         this.handlers.onLearned();
+        break;
+      case "lesson-prev":
+      case "lesson-next":
+        this.handlers.onLessonPage(action === "lesson-next" ? 1 : -1);
         break;
     }
   };

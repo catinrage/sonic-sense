@@ -109,7 +109,7 @@ export class Renderer {
   private fieldTex: WebGLTexture | null = null;
   private fieldW = 0;
   private fieldH = 0;
-  private readonly uploadedJobs = new WeakMap<object, number>();
+  private uploadedJobs = new WeakMap<object, number>();
   width = 1;
   height = 1;
   renderScale = 1;
@@ -214,6 +214,8 @@ export class Renderer {
     for (let layer = 0; layer < MAX_WAVES; layer++) {
       gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, fw, fh, 1, gl.RGBA, gl.FLOAT, blank);
     }
+    // Every layer is blank again: a world brought back (after the bestiary) must upload its sounds anew.
+    this.uploadedJobs = new WeakMap();
 
     const mw = level.w * MEMORY_RES;
     const mh = level.h * MEMORY_RES;

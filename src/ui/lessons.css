@@ -1,0 +1,190 @@
+/* Lessons read again: the pause menu's kit rows, the lesson pager and the HUD reminder. */
+
+.pause-kit {
+  gap: 0.15rem;
+  max-height: min(34vh, 24rem);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(108, 240, 255, 0.2) transparent;
+}
+
+.kit-caption {
+  margin: 0 0 0.45rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  line-height: 1.6;
+  color: var(--faint);
+}
+
+.kit-caption kbd {
+  font-size: 0.6rem;
+}
+
+.kit-row {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0.6rem 0.75rem 0.65rem;
+  border: 0;
+  border-radius: 0.45rem;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--dur) ease,
+    transform var(--dur) var(--ease-out);
+}
+
+/* A thin line of light down the row's edge, as on a menu item's ring. */
+.kit-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.7rem;
+  bottom: 0.7rem;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, var(--cyan), transparent);
+  opacity: 0;
+  transition: opacity var(--dur) ease;
+}
+
+.kit-row:hover,
+.kit-row:focus-visible {
+  background: linear-gradient(90deg, rgba(108, 240, 255, 0.08), rgba(108, 240, 255, 0));
+  transform: translateX(0.25rem);
+  outline: none;
+}
+
+.kit-row:hover::before,
+.kit-row:focus-visible::before {
+  opacity: 0.8;
+}
+
+.kit-row .kit-blurb {
+  display: block;
+}
+
+.kit-more {
+  margin-left: auto;
+  padding-left: 0.8rem;
+  font-size: 0.6rem;
+  letter-spacing: 0.28em;
+  color: var(--cyan);
+  opacity: 0;
+  transform: translateX(-0.3rem);
+  transition:
+    opacity var(--dur-fast) ease,
+    transform var(--dur) var(--ease-out);
+}
+
+.kit-more::after {
+  content: " \203A";
+}
+
+.kit-row:hover .kit-more,
+.kit-row:focus-visible .kit-more {
+  opacity: 0.85;
+  transform: none;
+}
+
+.lesson-pager {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  margin-top: 1.2rem;
+}
+
+.lesson-step {
+  display: grid;
+  place-items: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: rgba(3, 10, 16, 0.6);
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) ease,
+    border-color var(--dur-fast) ease,
+    box-shadow var(--dur) ease,
+    transform var(--dur) var(--ease-out);
+}
+
+.lesson-step svg {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.lesson-step:hover,
+.lesson-step:focus-visible {
+  color: var(--cyan);
+  border-color: rgba(108, 240, 255, 0.55);
+  box-shadow: 0 0 16px rgba(108, 240, 255, 0.22);
+  outline: none;
+}
+
+.lesson-step:active {
+  transform: scale(0.94);
+}
+
+.lesson-count {
+  min-width: 4.6em;
+  text-align: center;
+  font-size: var(--text-small);
+  letter-spacing: 0.3em;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.lesson-again {
+  margin: 1.3rem 0 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  color: var(--faint);
+}
+
+.lesson-again kbd {
+  font-size: 0.62rem;
+}
+
+.hud-lessons {
+  margin-left: 0.9em;
+}
+
+/* Wide screens: the lessons sit beside the pause menu instead of under it. */
+@media (min-width: 900px) {
+  #pause .panel:has(> .pause-kit:not([hidden])) {
+    width: min(58rem, 100%);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 25rem);
+    grid-template-rows: auto auto;
+    column-gap: 3.2rem;
+    align-items: start;
+  }
+
+  #pause .panel:has(> .pause-kit:not([hidden])) > .eyebrow {
+    grid-column: 1 / -1;
+  }
+
+  #pause .pause-kit {
+    grid-column: 2;
+    grid-row: 2;
+    margin: 0;
+    padding: 0 0 0 2rem;
+    border-top: 0;
+    border-left: 1px solid var(--line);
+    max-height: min(62vh, 34rem);
+  }
+}
+
+/* The HUD steps aside while the bestiary's stage is open. */
+.hud.is-away {
+  visibility: hidden;
+}

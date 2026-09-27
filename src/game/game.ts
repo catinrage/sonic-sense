@@ -46,11 +46,78 @@ export class Stage {
   dangerEnabled = true;
   /** Where a thrown stone would land (shown when stones are in hand). */
   readonly aim = { x: 0, y: 0, alpha: 0, lastMove: -10 };
+  /** The world set aside while a showcase (the bestiary) is on stage. */
+  private saved: {
+    world: World;
+    effects: Effects | null;
+    textures: LevelTextures | null;
+    camera: { x: number; y: number; viewHeight: number; zoomTarget: number };
+    cameraOffset: { x: number; y: number };
+    zoomOverride: number | null;
+    dangerEnabled: boolean;
+    fade: number;
+    exposure: number;
+  } | null = null;
 
   constructor(
     private readonly renderer: Renderer,
     private readonly input: Input,
   ) {}
+
+  /**
+   * Put another world on stage for a while (the bestiary), keeping the one that
+   * was showing — a paused chapter, or the title — exactly as it was.
+   */
+  enterShowcase(def: LevelDef): World {
+    if (!this.saved) {
+      const c = this.camera;
+      this.saved = {
+        world: this.world,
+        effects: this.effects,
+        textures: this.textures,
+        camera: { x: c.x, y: c.y, viewHeight: c.viewHeight, zoomTarget: c.zoomTarget },
+        cameraOffset: { ...this.cameraOffset },
+        zoomOverride: this.zoomOverride,
+        dangerEnabled: this.dangerEnabled,
+        fade: this.post.fade,
+        exposure: this.post.exposure,
+      };
+      // Set aside, not thrown away: load() would dispose them.
+      this.effects = null;
+      this.textures = null;
+    }
+    return this.load(def);
+  }
+
+  /** Bring back the world the showcase set aside. */
+  leaveShowcase(): World | null {
+    const s = this.saved;
+    if (!s) return null;
+    this.saved = null;
+    this.effects?.dispose();
+    this.textures?.dispose(this.renderer.gl);
+    this.particles.clear();
+    this.world = s.world;
+    this.effects = s.effects;
+    this.textures = s.textures;
+    if (s.textures) {
+      this.renderer.setLevel(s.textures);
+      s.textures.markTilesDirty();
+    }
+    this.renderer.setDust(s.world.dustMotes());
+    this.seenSolidity = s.world.solidityVersion;
+    this.seenTiles = s.world.tilesVersion;
+    this.seenTerrain = s.world.terrainVersion;
+    this.camera.snap(s.camera.x, s.camera.y);
+    this.camera.viewHeight = s.camera.viewHeight;
+    this.camera.zoomTarget = s.camera.zoomTarget;
+    this.cameraOffset = s.cameraOffset;
+    this.zoomOverride = s.zoomOverride;
+    this.dangerEnabled = s.dangerEnabled;
+    this.post.fade = s.fade;
+    this.post.exposure = s.exposure;
+    return s.world;
+  }
 
   load(def: LevelDef): World {
     this.effects?.dispose();

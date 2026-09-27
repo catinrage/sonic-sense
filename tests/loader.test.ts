@@ -150,6 +150,7 @@ describe("loading scene", () => {
     expect(Math.max(...perOrigin.values())).toBe(1);
   });
 
+  // Paints hundreds of full frames in software: slow by nature, so it gets room beyond the default 5 s.
   test("draws every frame of a long load without a single unreadable colour", () => {
     const listeners: ((m: LoaderInbound) => void)[] = [];
     const posted: LoaderOutbound[] = [];
@@ -178,7 +179,7 @@ describe("loading scene", () => {
     }
     expect(posted.filter((m) => m.type === "failed")).toEqual([]);
     expect(posted.some((m) => m.type === "finished")).toBe(true);
-  });
+  }, 20_000);
 
   test("never sounds its chord before it has had time to show the room", () => {
     const listeners: ((m: LoaderInbound) => void)[] = [];

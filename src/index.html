@@ -8,6 +8,8 @@
     <title>Sonic Sense</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2302030a'/%3E%3Ccircle cx='32' cy='32' r='5' fill='%236cf0ff'/%3E%3Ccircle cx='32' cy='32' r='14' fill='none' stroke='%236cf0ff' stroke-opacity='.7' stroke-width='3'/%3E%3Ccircle cx='32' cy='32' r='24' fill='none' stroke='%236cf0ff' stroke-opacity='.35' stroke-width='3'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./ui/lessons.css" />
+    <link rel="stylesheet" href="./ui/bestiary.css" />
   </head>
   <body>
     <canvas id="view" tabindex="0" aria-label="Game view"></canvas>
@@ -29,6 +31,9 @@
               <span class="menu-ring"></span><span class="menu-label">Continue</span><span class="menu-meta" data-bind="continue-meta"></span>
             </button>
             <button class="menu-item" data-action="chapters"><span class="menu-ring"></span><span class="menu-label">Chapters</span></button>
+            <button class="menu-item" data-action="bestiary">
+              <span class="menu-ring"></span><span class="menu-label">Bestiary</span><span class="menu-meta" data-bind="bestiary-meta"></span>
+            </button>
             <button class="menu-item" data-action="settings"><span class="menu-ring"></span><span class="menu-label">Sound &amp; Sight</span></button>
           </nav>
         </div>
@@ -77,7 +82,10 @@
           <div class="hud-abilities" data-bind="hud-abilities" aria-label="Abilities" hidden></div>
         </div>
         <p class="hud-hint" data-bind="hud-hint"></p>
-        <p class="hud-keys"><kbd class="kbd-wide">Space</kbd> call <kbd>Shift</kbd> sneak <kbd>Click</kbd> throw <kbd>R</kbd> retry <kbd>Esc</kbd> pause</p>
+        <p class="hud-keys">
+          <kbd class="kbd-wide">Space</kbd> call <kbd>Shift</kbd> sneak <kbd>Click</kbd> throw <kbd>R</kbd> retry <kbd>Esc</kbd> pause
+          <span class="hud-lessons" data-bind="hud-lessons" hidden><kbd>H</kbd> lessons</span>
+        </p>
       </section>
 
       <!-- Chapter card -->
@@ -90,7 +98,7 @@
 
       <!-- A newly granted ability, taught before the chapter goes on -->
       <section id="ability" class="screen screen--panel screen--ability" aria-label="Lesson" hidden>
-        <div class="lesson">
+        <div class="lesson" data-bind="lesson">
           <p class="eyebrow lesson-eyebrow" data-bind="ability-eyebrow">New ability</p>
           <div class="lesson-glyph" data-bind="ability-glyph" aria-hidden="true"></div>
           <h2 class="lesson-title" data-bind="ability-title"></h2>
@@ -98,6 +106,16 @@
           <p class="lesson-does" data-bind="ability-does"></p>
           <p class="lesson-tip" data-bind="ability-tip"></p>
           <button class="menu-item" data-action="learned"><span class="menu-ring"></span><span class="menu-label">Understood</span></button>
+          <div class="lesson-pager" data-bind="lesson-pager" hidden>
+            <button class="lesson-step" data-action="lesson-prev" aria-label="Previous lesson">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6l-6 6 6 6" /></svg>
+            </button>
+            <span class="lesson-count" data-bind="lesson-count"></span>
+            <button class="lesson-step" data-action="lesson-next" aria-label="Next lesson">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6" /></svg>
+            </button>
+          </div>
+          <p class="lesson-again" data-bind="lesson-again">Read it again any time with <kbd>H</kbd>, or from the pause menu.</p>
         </div>
       </section>
 
@@ -114,11 +132,31 @@
           <nav class="menu menu--compact">
             <button class="menu-item" data-action="resume"><span class="menu-ring"></span><span class="menu-label">Resume</span></button>
             <button class="menu-item" data-action="restart"><span class="menu-ring"></span><span class="menu-label">Restart chapter</span></button>
+            <button class="menu-item" data-action="bestiary"><span class="menu-ring"></span><span class="menu-label">Bestiary</span></button>
             <button class="menu-item" data-action="settings"><span class="menu-ring"></span><span class="menu-label">Sound &amp; Sight</span></button>
             <button class="menu-item" data-action="quit"><span class="menu-ring"></span><span class="menu-label">Leave to title</span></button>
           </nav>
           <div class="pause-kit" data-bind="pause-kit" hidden></div>
         </div>
+      </section>
+
+      <!-- Bestiary: what listens in the dark. The creature itself is drawn by the game, in the stage cell. -->
+      <section id="bestiary" class="screen screen--bestiary" aria-label="Bestiary" hidden>
+        <header class="bestiary-head">
+          <p class="eyebrow">Bestiary</p>
+          <p class="bestiary-title">What listens in the dark</p>
+          <p class="bestiary-count" data-bestiary="count"></p>
+        </header>
+        <nav class="bestiary-index" data-bestiary="index" aria-label="Creatures"></nav>
+        <article class="bestiary-page" data-bestiary="page" aria-live="polite"></article>
+        <div class="bestiary-stage" data-bestiary="stage">
+          <p class="bestiary-caption" data-bestiary="caption" aria-live="polite"></p>
+          <button class="bestiary-call" data-bestiary-call><kbd class="kbd-wide">Space</kbd><span>Call to it</span></button>
+        </div>
+        <footer class="bestiary-foot">
+          <span class="bestiary-keys"><kbd>&uarr;</kbd><kbd>&darr;</kbd> choose <kbd class="kbd-wide">Space</kbd> call to it</span>
+          <button class="text-button" data-action="back">Back</button>
+        </footer>
       </section>
 
       <!-- Ending -->

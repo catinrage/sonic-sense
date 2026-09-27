@@ -76,7 +76,7 @@ export class SceneBuilder {
     const aimAngle = aim ? Math.atan2(aim.y - p.y, aim.x - p.x) : p.facing;
     const note = world.keyNoteAt(p.x, p.y);
     const keyTint = note === null ? [0, 0, 0, 0] : [...noteColor(note, COLORS.pulse), 1];
-    this.add("aura", p.x, p.y, 0.01, 0, 0.75, 0.75, 7, [p.charge, t, p.sneakAmt, alpha], [p.listen, p.muffled ? 1 : 0, focusing, aimAngle], undefined, true, keyTint);
+    this.add("aura", p.x, p.y, 0.01, 0, 0.75, 0.75, 7, [p.charge, t, p.sneakAmt, alpha], [p.listen, p.hush, focusing, aimAngle], undefined, true, keyTint);
     this.add(
       "player",
       p.x,
@@ -90,7 +90,7 @@ export class SceneBuilder {
       [p.earL, p.earR, p.tailSway, p.blink],
       undefined,
       false,
-      [t, 0, p.fade, 0],
+      [t, 0, p.fade, p.hush],
     );
     return this.out;
   }

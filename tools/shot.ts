@@ -73,8 +73,12 @@ const scenarios: Record<string, Scenario> = {
     for (const line of script.split(";;")) {
       const cmd = line.trim();
       if (!cmd) continue;
-      if (cmd.startsWith("snap ")) await snap(cmd.slice(5).trim());
-      else await run(page, cmd);
+      if (cmd.startsWith("snap ")) {
+        await snap(cmd.slice(5).trim());
+        continue;
+      }
+      const out = await run(page, cmd);
+      if (out !== undefined) console.log(`=> ${typeof out === "string" ? out : JSON.stringify(out)}`);
     }
   },
 };
@@ -113,7 +117,8 @@ try {
     });
   }
   const query = process.env.SHOT_QUERY ?? "";
-  const manual = name !== "play" && name !== "loading";
+  // SHOT_LIVE runs a custom script against the live loop (loading scene, real frames) instead of stepping it.
+  const manual = name !== "play" && name !== "loading" && !process.env.SHOT_LIVE;
   await page.goto(`${server.url}?${manual ? "manual" : "live"}${query ? "&" + query : ""}`);
   await page.waitForFunction("window.__sonic !== undefined || document.getElementById('fatal')?.hidden === false", null, {
     timeout: 60_000,

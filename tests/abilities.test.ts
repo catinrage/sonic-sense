@@ -169,6 +169,21 @@ describe("Muffle", () => {
     expect(fill()).toBeCloseTo(0.5, 1);
   });
 
+  test("muffled, the creature thins into the dark and its steps are only seen, never heard", () => {
+    const world = new World(parseLevel(level(HALL.map((r, y) => (y === 2 ? "#@............#" : r)), ["muffle"])));
+    let hushed = 0;
+    world.events.on("hushedStep", () => hushed++);
+    expect(world.player.hush).toBe(0);
+    run(world, 1 / 60, { mufflePressed: true });
+    run(world, 1.5, { moveX: 1 });
+    expect(world.player.hush).toBeGreaterThan(0.95);
+    expect(hushed).toBeGreaterThan(0);
+    run(world, MUFFLE_TIME);
+    expect(world.player.muffled).toBe(false);
+    run(world, 2);
+    expect(world.player.hush).toBeLessThan(0.05);
+  });
+
   test("a tremor cannot feel muffled steps", () => {
     const map = ["##############################", "#............................#", "#.@..........T...............#", "#............................#", "##############################"];
     const legend: LevelDef["legend"] = { T: { kind: "warden", creature: "tremor" } };

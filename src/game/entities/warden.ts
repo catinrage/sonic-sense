@@ -34,7 +34,7 @@ const LEG_DEFS: readonly LegDef[] = [
 ];
 
 /** Speed at which the leg gait reaches a full stride (tiles/s). */
-const STRIDE_SPEED = 2.75;
+export const STRIDE_SPEED = 2.75;
 
 interface Leg {
   fx: number;
@@ -86,6 +86,8 @@ export class Warden implements Listener {
   readonly traits: WardenTraits;
   /** Title-screen extra: it clicks and twitches but never hunts. */
   deaf = false;
+  /** Bestiary only: 0..1, flares its membranes and glow as though it had heard something. */
+  private roused = 0;
 
   constructor(x: number, y: number, route: Vec2[], traits: WardenTraits, seed: number) {
     this.x = x;
@@ -132,6 +134,26 @@ export class Warden implements Listener {
     this.react(tx, ty, world, !fromPeer);
   }
 
+  /** Bestiary only: hold it where it is shown, walking (or not) as it goes. */
+  pose(x: number, y: number, heading: number, moving: number): void {
+    this.x = x;
+    this.y = y;
+    this.heading = heading;
+    this.moving = Math.max(this.moving, moving);
+  }
+
+  /** Bestiary only: show how it looks when it has heard you. */
+  rouse(amount: number): void {
+    this.roused = Math.max(this.roused, amount);
+    this.alert = Math.max(this.alert, amount);
+  }
+
+  /** Bestiary only: it hears you and cries out, flared — but the cry calls no one, and it stays where it is. */
+  startle(world: World): void {
+    this.rouse(1);
+    this.shriek(world, false);
+  }
+
   /** Its pulse passed over something moving at (x, y). */
   spot(x: number, y: number, world: World): void {
     if (this.deaf) return;
@@ -165,8 +187,10 @@ export class Warden implements Listener {
     this.feltCooldown = Math.max(0, this.feltCooldown - dt);
     this.feelGround(world);
     this.alert = Math.max(0, this.alert - dt * 0.25);
-    const hunting = this.state === "alert" || this.state === "hunt";
-    this.frill = damp(this.frill, hunting ? 1 : this.state === "search" ? 0.7 : 0.18, hunting ? 9 : 3, dt);
+    this.roused = Math.max(0, this.roused - dt * 0.45);
+    const hunting = this.state === "alert" || this.state === "hunt" || this.roused > 0.35;
+    const flare = Math.max(this.roused, hunting ? 1 : this.state === "search" ? 0.7 : 0.18);
+    this.frill = damp(this.frill, flare, hunting ? 9 : 3, dt);
     this.mandible = damp(this.mandible, hunting ? 0.6 + Math.sin(world.time * 18) * 0.4 : 0.1, 8, dt);
     let speed = 0;
 

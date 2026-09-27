@@ -6,7 +6,7 @@ import { ENTITY_PRELUDE } from "./entity-common";
  *
  * uP[0]: walk phase, walk amount (0..1), charge (0..1), sneak (0..1)
  * uP[1]: left ear swivel, right ear swivel, tail sway, blink (0..1)
- * uP[2]: time, glow pulse, fade (0..1), unused
+ * uP[2]: time, glow pulse, fade (0..1), hush (0..1: Muffle thins it into the dark)
  */
 export const PLAYER_FS = /* glsl */ `${ENTITY_PRELUDE}
 
@@ -121,7 +121,9 @@ void main() {
   float px = pxSize() / SCALE;
   float time = uP[2].x;
   float ch = charge();
-  float pulse = 0.75 + 0.25 * sin(time * 2.6) + ch * 0.8;
+  float hush = uP[2].w;
+  // Muffled, its own lights sink; a charging call still shows in the ears.
+  float pulse = (0.75 + 0.25 * sin(time * 2.6)) * (1.0 - hush * 0.8) + ch * 0.8;
   Surf s = surfEmpty();
 
   // Contact shadow.
@@ -188,6 +190,7 @@ void main() {
   over(s, headCol, n, vec3(0.0), 0.08, 12.0, cover(dh, px));
 
   float blink = uP[1].w;
+  float eyes = 0.0;
   for (int k = 0; k < 2 + LOOP_ZERO; k++) {
     float side = k == 0 ? -1.0 : 1.0;
     vec2 ec = vec2(0.225, side * 0.066);
@@ -196,6 +199,7 @@ void main() {
     vec3 eyeN = normalize(vec3((p - ec) * 14.0, 1.0));
     float catch1 = 1.0 - smoothstep(0.005, 0.011, length(p - ec - vec2(0.012, -0.011)));
     over(s, vec3(0.015, 0.02, 0.035), eyeN, GLOWC * (0.08 + catch1 * 1.2) * (1.0 - blink), 2.5, 140.0, cover(de, px));
+    eyes = max(eyes, cover(de, px) * (1.0 - blink));
   }
   float dn = sdEllipse(p - vec2(0.352, 0.0), vec2(0.017, 0.024));
   over(s, vec3(0.2, 0.08, 0.12), vec3(0.0, 0.0, 1.0), vec3(0.0), 0.8, 60.0, cover(dn, px));
@@ -203,6 +207,17 @@ void main() {
   // Soft rim so the silhouette always reads in the dark.
   float rim = pow(1.0 - clamp(n.z, 0.0, 1.0), 2.5);
   glow(s, GLOWC * rim * 0.18 * (1.0 - step(0.9, 1.0 - s.a)));
+
+  // Muffle: the creature thins into the dark. Its fur greys and cools, and the body is only a
+  // drifting, mirage-like veil; the eyes and a faint cold edge are what remain.
+  if (hush > 0.001) {
+    float grey = dot(s.alb, vec3(0.3, 0.55, 0.15));
+    s.alb = mix(s.alb, grey * vec3(0.52, 0.6, 0.9), hush * 0.85);
+    float veil = vnoise(vWorld * 6.5 + vec2(time * 0.7, -time * 0.5)) * 0.6 + vnoise(p * 24.0 + vec2(-time * 1.6, time)) * 0.4;
+    float keep = mix(1.0, mix(0.12, 0.58, smoothstep(0.3, 0.72, veil)), hush);
+    s.a *= mix(keep, 1.0, eyes);
+    glow(s, vec3(0.32, 0.46, 1.0) * rim * hush * 0.9);
+  }
 
   float fade = uP[2].z;
   s.a *= 1.0 - fade;
@@ -213,7 +228,7 @@ void main() {
 
 /** Additive halo drawn under the player: charge ring and faint aura. uP[0]: charge, time, sneak, alpha. */
 export const AURA_FS = /* glsl */ `${ENTITY_PRELUDE}
-// uP[0]: charge, time, sneak, alpha. uP[1]: listen, muffled, focusing, aim angle.
+// uP[0]: charge, time, sneak, alpha. uP[1]: listen, hush (Muffle, 0..1), focusing, aim angle.
 // uP[2]: the note of the key the creature stands on (colour), and whether it stands on one.
 void main() {
   vec2 p = vLocal;
@@ -221,13 +236,13 @@ void main() {
   float time = uP[0].y;
   float alpha = uP[0].w;
   float listen = uP[1].x;
-  float muffled = uP[1].y;
+  float hush = uP[1].y;
   float focusing = uP[1].z;
   float aimAng = uP[1].w;
   float r = length(p);
   float onKey = uP[2].w;
   vec3 col = mix(vec3(0.3, 0.9, 1.0), uP[2].rgb, onKey);
-  float aura = exp(-r * r * 18.0) * 0.05 * (1.0 - uP[0].z * 0.7);
+  float aura = exp(-r * r * 18.0) * 0.05 * (1.0 - uP[0].z * 0.7) * (1.0 - hush * 0.9);
   float ringR = 0.42 + ch * 0.18;
   float ang = atan(p.y, p.x);
   // A focused call gathers into a wedge pointing where it will fly.
@@ -244,9 +259,16 @@ void main() {
     float rr = 0.72 * (1.0 - fract(time * 0.35 + float(k) / 3.0));
     c += vec3(0.62, 0.8, 1.0) * exp(-pow((r - rr) / 0.01, 2.0)) * listen * smoothstep(0.0, 0.2, rr) * 0.35;
   }
-  // Muffle: a hushed, slowly turning dotted ring.
-  float dots = step(0.55, fract(ang / TAU * 16.0 + time * 0.15));
-  c += vec3(0.4, 0.55, 0.9) * exp(-pow((r - 0.34) / 0.014, 2.0)) * dots * muffled * 0.6;
+  // Muffle: a few faint motes drift in and vanish against the creature, as though the air were hushed.
+  for (int k = 0; k < 7 + LOOP_ZERO; k++) {
+    float fk = float(k);
+    float cycle = time * 0.45 + fk * 0.618;
+    float life = fract(cycle);
+    float a2 = fk * 2.39996 + floor(cycle) * 1.7 + life * 1.2;
+    vec2 mp = vec2(cos(a2), sin(a2)) * mix(0.62, 0.12, life);
+    float shown = smoothstep(0.0, 0.25, life) * (1.0 - smoothstep(0.75, 1.0, life));
+    c += vec3(0.45, 0.6, 1.0) * exp(-dot(p - mp, p - mp) / 0.0009) * shown * hush * 0.5;
+  }
   // Standing on a key: a steady ring in its note's colour, so the next call's note is never a surprise.
   c += uP[2].rgb * exp(-pow((r - 0.5) / 0.012, 2.0)) * onKey * (0.35 + 0.1 * sin(time * 3.0));
   outColor = vec4(c * alpha, 0.0);

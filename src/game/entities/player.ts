@@ -80,6 +80,8 @@ export class Player {
   /** Seconds of Muffle left, and until it can be used again. */
   muffleLeft = 0;
   muffleCooldown = 0;
+  /** 0..1: how far Muffle has thinned the creature into the dark (eases in and out). */
+  hush = 0;
   cooldown = 0;
   stones = 0;
   walkPhase = 0;
@@ -117,6 +119,8 @@ export class Player {
 
   update(dt: number, intent: PlayerIntent, world: World): void {
     this.animateIdle(dt, world.time);
+    const hushed = this.muffled && !this.dying;
+    this.hush = damp(this.hush, hushed ? 1 : 0, hushed ? 5 : 2.5, dt);
     if (this.dying) {
       this.listen = 0;
       this.updateDeath(dt);
@@ -320,10 +324,13 @@ export class Player {
 
   private footstep(world: World, sneaking: boolean): void {
     this.stepSide = -this.stepSide;
-    if (this.muffled) return;
     const side = this.stepSide * 0.1;
     const fx = this.x + Math.cos(this.facing + Math.PI / 2) * side;
     const fy = this.y + Math.sin(this.facing + Math.PI / 2) * side;
+    if (this.muffled) {
+      world.events.emit("hushedStep", { x: fx, y: fy });
+      return;
+    }
     const tile = world.tileAtPos(this.x, this.y);
     const water = tile === TILE.Water;
     const silt = tile === TILE.Silt;

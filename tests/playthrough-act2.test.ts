@@ -163,6 +163,7 @@ describe("act II playthroughs", () => {
     expect(tremor().state).not.toBe("idle");
   });
 
+  // The longest act II run: the whole chapter, simulated frame by frame, takes a few seconds on its own.
   test("XIV Where the Dark Breathes — everything at once", () => {
     const bot = new Bot(level("where-the-dark-breathes"));
     const tremors = bot.world.wardens.filter((w) => w.traits.kind === "tremor");
@@ -195,7 +196,7 @@ describe("act II playthroughs", () => {
     bot.go(47, 2).note("third shard").go(56, 12);
     expect(bot.world.shardsCollected).toBe(3);
     expect(bot.finished).toBe(true);
-  });
+  }, 20_000);
 
   test("XI The Watcher — a call in its hall brings the hunters", () => {
     const bot = new Bot(level("the-watcher"));

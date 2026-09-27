@@ -24,6 +24,8 @@ export interface WorldEvents {
   listen: { x: number; y: number };
   lure: { x: number; y: number; left: number };
   step: { x: number; y: number; water: boolean; silt: boolean; sneak: boolean };
+  /** A footfall Muffle swallowed: seen, never heard. */
+  hushedStep: { x: number; y: number };
   noStones: { x: number; y: number };
   throw: { x: number; y: number };
   stoneHit: { x: number; y: number; strength: number; water: boolean };

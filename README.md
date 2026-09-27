@@ -31,7 +31,8 @@ are panned to where they bounced.
 | `Shift` | Sneak: quiet (only a hunter within arm's reach hears it), slow — and blind |
 | Left click / `E` | Throw a stone where the reticle shows |
 | `Q` (hold, release) | **Focus** (Act II): a narrow call aimed at the pointer |
-| `F` | **Muffle** (Act II): silence your footfalls for a few seconds |
+| `F` | **Muffle** (Act II): silence your footfalls for a few seconds — you thin into the dark while it lasts |
+| `H` | Read the chapter's lessons again |
 | `R` | Restart the chapter |
 | `Esc` / `P` | Pause |
 
@@ -77,7 +78,8 @@ played with, and grants at most one new one:
   stones keep chirping where they land. **Muffle** — a few silent seconds.
   Each is taught on its own screen when its chapter begins (the chapter waits
   until you have read it), the HUD shows what sets each one off, and the pause
-  menu lists the abilities the current chapter is played with.
+  menu lists everything the current chapter is played with: choose any of them
+  to read its lesson again, or press `H` while playing to page through them.
 
 ### Act III — The Instrument
 
@@ -106,6 +108,15 @@ appears, and listed in the pause menu wherever it is.
   it, sees anything moving as it passes. **The Conductor** is slow, relentless,
   and hears every discord struck anywhere in the Instrument — which makes a
   wrong note, played on purpose far away, the best lure there is.
+
+### Bestiary
+
+Every creature you have heard is kept in the **Bestiary** (title screen or
+pause menu). Each page is a creature alive on its own small stage — walking its
+round, clicking, pulsing, thumping as it does in the dark — beside its field
+notes: what it senses, how fast and how long it hunts, how far its cry carries,
+its ways, and how to live near it. Press `Space` to call to it and see how it
+answers. Creatures you have not met yet stay unheard until you reach them.
 
 Progress and settings are saved in the browser.
 
@@ -229,7 +240,7 @@ src/game/              Simulation: world, entities, sound fields, levels, effect
 src/render/            WebGL2 renderer and GLSL (scene, sonar, entities, post)
 src/audio/             Audio engine, sample bank, recipes, ambience
 src/assets/audio/      Generated sound effects and ambient loops (ElevenLabs)
-src/ui/                DOM overlay (menus, HUD, cards)
+src/ui/                DOM overlay (menus, HUD, cards, lessons, bestiary)
 src/loader/            The loading scene (runs in a Worker)
 tests/                 Solver, level solvability, simulation, scripted playthroughs
 tools/                 Screenshot harness and level analysis

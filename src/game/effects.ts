@@ -7,6 +7,8 @@ import { PARTICLE_KIND, type Particles } from "./particles";
 import type { World } from "./world";
 
 const scale = (c: RGB, k: number): RGB => [c[0] * k, c[1] * k, c[2] * k];
+/** Muffle's cold, hushed blue. */
+const HUSH: RGB = [0.36, 0.5, 1.0];
 
 /** Visual reactions (particles, camera shake) to world events. */
 export class Effects {
@@ -22,6 +24,8 @@ export class Effects {
       ev.on("pulse", (e) => (e.aim ? this.focusBurst(e.x, e.y, e.charge, e.aim.x, e.aim.y) : this.pulseBurst(e.x, e.y, e.charge))),
       ev.on("lure", (e) => this.halo(e.x, e.y, COLORS.lure, 0.35)),
       ev.on("step", (e) => this.stepPuff(e.x, e.y, e.water, e.silt)),
+      ev.on("hushedStep", (e) => this.hushedStep(e.x, e.y)),
+      ev.on("muffle", (e) => this.hush(e.x, e.y, e.on)),
       ev.on("stoneHit", (e) => this.impact(e.x, e.y, e.strength, e.water)),
       ev.on("crystal", (e) => (e.beam ? this.beamBurst(e.x, e.y, e.beam.x, e.beam.y) : this.crystalBurst(e.x, e.y))),
       ev.on("bell", (e) => this.bellRing(e.x, e.y, e.group)),
@@ -333,6 +337,35 @@ export class Effects {
   private halo(x: number, y: number, color: RGB, size: number): void {
     this.particles.spawn({ x, y, z: 0.5, life: 0.9, size: 0.2, sizeEnd: size * 2.2, color: scale(color, 0.8), kind: PARTICLE_KIND.Ring });
     this.sparkle(x, y, color, 6, 0.25);
+  }
+
+  /** Muffle takes hold: the air around the creature is drawn in and swallowed. It lifts with a small exhale. */
+  private hush(x: number, y: number, on: boolean): void {
+    const n = on ? 34 : 10;
+    for (let i = 0; i < n; i++) {
+      const a = fxRng.range(0, Math.PI * 2);
+      const r = on ? fxRng.range(0.55, 1.05) : fxRng.range(0.1, 0.25);
+      const sp = on ? -r * fxRng.range(1.9, 2.4) : fxRng.range(0.4, 0.9);
+      this.particles.spawn({
+        x: x + Math.cos(a) * r,
+        y: y + Math.sin(a) * r,
+        z: fxRng.range(0.05, 0.35),
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        life: on ? fxRng.range(0.35, 0.48) : fxRng.range(0.5, 0.9),
+        size: fxRng.range(0.015, 0.03),
+        sizeEnd: 0.005,
+        color: scale(HUSH, on ? 1.8 : 0.8),
+        drag: on ? 0.5 : 2.5,
+        kind: PARTICLE_KIND.Spark,
+        stretch: on ? 0.12 : 0.05,
+      });
+    }
+  }
+
+  /** A footfall Muffle swallowed: the faintest ring, closing instead of spreading. */
+  private hushedStep(x: number, y: number): void {
+    this.particles.spawn({ x, y, z: 0.01, life: 0.25, size: 0.2, sizeEnd: 0.02, color: scale(HUSH, 0.22), kind: PARTICLE_KIND.Ring });
   }
 
   /** Dust shaken loose by a tremor's footfall; the camera feels the close ones. */
