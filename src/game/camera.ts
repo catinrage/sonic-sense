@@ -3,7 +3,7 @@ import { gnoise1 } from "./noise";
 import type { CameraView } from "../render/renderer";
 
 export const BASE_VIEW_HEIGHT = 12.5;
-const CAMERA_HEIGHT = 17;
+export const CAMERA_HEIGHT = 17;
 
 /** Smooth follow camera with look-ahead, zoom and trauma-based shake. */
 export class Camera {

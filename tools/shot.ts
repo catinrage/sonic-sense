@@ -59,6 +59,15 @@ const scenarios: Record<string, Scenario> = {
     const state = await page.evaluate("JSON.stringify({ mode: __sonic.mode, player: __sonic.debugPlayer() })");
     console.log("state", state);
   },
+  /** The loading screen, frame by frame, until the title takes over. */
+  async loading(page, snap) {
+    const every = Number(process.env.SHOT_EVERY ?? 500);
+    const count = Number(process.env.SHOT_COUNT ?? 16);
+    for (let i = 0; i < count; i++) {
+      await snap(`t${String(Math.round((i * every) / 100) / 10).padStart(4, "0")}s`);
+      await page.waitForTimeout(every);
+    }
+  },
   async custom(page, snap) {
     const script = process.env.SHOT_SCRIPT ?? "";
     for (const line of script.split(";;")) {
@@ -84,7 +93,12 @@ const browser = await chromium.launch({
 });
 
 try {
-  const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
+  // SHOT_VIDEO records the whole run in real time (screenshots are too slow to catch fast animation).
+  const page = await browser.newPage({
+    viewport: { width, height },
+    deviceScaleFactor: 1,
+    ...(process.env.SHOT_VIDEO ? { recordVideo: { dir: outDir, size: { width, height } } } : {}),
+  });
   page.on("console", (msg) => {
     if (msg.type() === "error" || msg.type() === "warning") console.log(`[browser ${msg.type()}] ${msg.text()}`);
   });
@@ -99,15 +113,18 @@ try {
     });
   }
   const query = process.env.SHOT_QUERY ?? "";
-  const manual = name !== "play";
+  const manual = name !== "play" && name !== "loading";
   await page.goto(`${server.url}?${manual ? "manual" : "live"}${query ? "&" + query : ""}`);
   await page.waitForFunction("window.__sonic !== undefined || document.getElementById('fatal')?.hidden === false", null, {
     timeout: 60_000,
   });
-  await page.waitForFunction("(window.__sonic && window.__sonic.ready) || document.getElementById('fatal')?.hidden === false", null, {
-    timeout: 120_000,
-    polling: 100,
-  }).catch((e) => console.log(`shader build wait failed: ${e}`));
+  // The loading scenario watches the build instead of waiting it out.
+  if (name !== "loading") {
+    await page.waitForFunction("(window.__sonic && window.__sonic.ready) || document.getElementById('fatal')?.hidden === false", null, {
+      timeout: 120_000,
+      polling: 100,
+    }).catch((e) => console.log(`shader build wait failed: ${e}`));
+  }
   const fatal = await page.evaluate("document.getElementById('fatal')?.hidden === false ? document.getElementById('fatal').textContent : ''");
   if (fatal) {
     console.log(`FATAL:\n${fatal}`);
@@ -125,5 +142,6 @@ try {
   }
 } finally {
   await browser.close();
+  if (process.env.SHOT_VIDEO) console.log(`video written to ${outDir}`);
   server.stop(true);
 }

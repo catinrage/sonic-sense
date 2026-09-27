@@ -265,6 +265,19 @@ export class Renderer {
     return true;
   }
 
+  /** How far shader building has come, for the loading screen. */
+  get buildStatus(): { done: number; total: number; building: string } {
+    const total = this.builtPrograms.length + this.programQueue.length;
+    if (this.programsReady) return { done: total, total, building: "" };
+    let done = 0;
+    let building = this.programQueue[0]?.label ?? "";
+    for (const p of this.builtPrograms) {
+      if (p.isComplete(this.parallel)) done++;
+      else if (!building) building = p.label;
+    }
+    return { done, total, building };
+  }
+
   private buildNextProgram(): Program {
     const spec = this.programQueue.shift()!;
     const program = new Program(this.gl, spec.vs, spec.fs, spec.label);

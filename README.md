@@ -151,6 +151,17 @@ shaders with analytic normals, lit by the same sonar. Post-processing adds a
 dual-filter bloom, a shock-wave distortion ahead of loud fronts, chromatic
 aberration, filmic tone mapping and grain.
 
+**Loading screen** (`src/loader`). While the GPU driver compiles the game's
+shaders, a 2D canvas plays the title chamber through the title's own camera:
+the creature gathers its breath and calls, sound bends round the room on
+fields solved the way the game solves them, crystals answer (each once per
+sound), and as the shaders finish, the five tones are tuned into the crystals
+one by one — until they ring a chord, the creature makes its loudest call, and
+the curtain lifts on the same room, now drawn by the game. It runs inside a Web
+Worker on a transferred canvas, so it keeps its pace even while compilation
+blocks the page; its parts are self-contained functions whose source text *is*
+the Worker, and a test rebuilds them from that text alone to prove it.
+
 **Audio** (`src/audio`). Two layers over one Web Audio graph. The graph itself
 is procedural: spatial channels (distance gain, lowpass, pan, reverb send), room
 echoes ray-cast against the level so small rooms answer quickly and halls slowly,
@@ -219,6 +230,7 @@ src/render/            WebGL2 renderer and GLSL (scene, sonar, entities, post)
 src/audio/             Audio engine, sample bank, recipes, ambience
 src/assets/audio/      Generated sound effects and ambient loops (ElevenLabs)
 src/ui/                DOM overlay (menus, HUD, cards)
+src/loader/            The loading scene (runs in a Worker)
 tests/                 Solver, level solvability, simulation, scripted playthroughs
 tools/                 Screenshot harness and level analysis
 ```

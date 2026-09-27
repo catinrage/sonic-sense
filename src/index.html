@@ -133,7 +133,20 @@
         </div>
       </section>
 
-      <div id="curtain" class="curtain"><p class="curtain-note">Tuning the dark&hellip;</p></div>
+      <div id="curtain" class="curtain">
+        <canvas class="loader-canvas" aria-hidden="true"></canvas>
+        <div class="loader-ui" role="status" aria-label="Loading">
+          <ol class="loader-notes" aria-hidden="true">
+            <li class="loader-note" style="--note: #ff7338"><svg viewBox="0 0 24 24"><path d="M12 5l7 12H5z" /></svg></li>
+            <li class="loader-note" style="--note: #ffd647"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6.5" /></svg></li>
+            <li class="loader-note" style="--note: #3deb99"><svg viewBox="0 0 24 24"><path d="M12 4.5l7.5 7.5-7.5 7.5-7.5-7.5z" /></svg></li>
+            <li class="loader-note" style="--note: #6bc7ff"><svg viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h14" /></svg></li>
+            <li class="loader-note" style="--note: #e680ff"><svg viewBox="0 0 24 24"><path d="M12 4.5v15M4.5 12h15" /></svg></li>
+          </ol>
+          <p class="loader-status" data-loader-status>Tuning the dark</p>
+        </div>
+        <p class="curtain-note">Tuning the dark&hellip;</p>
+      </div>
     </div>
 
     <pre id="fatal" hidden></pre>

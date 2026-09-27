@@ -14,11 +14,15 @@ import { AudioDirector } from "./audio/director";
 import { UI, type ChapterInfo, type EndingContent, type KitRow, type LessonView, type SettingKey, type VolumeBus } from "./ui/ui";
 import { ABILITY_GLYPHS, CODEX_GLYPHS } from "./ui/glyphs";
 import { loadSave, persist, type SaveData } from "./save";
+import { TITLE_CAMERA_OFFSET, TITLE_FACING } from "./game/title";
+import type { Loader } from "./loader/loader";
 
 const MAX_DT = 1 / 20;
 const DEATH_DELAY = 2.2;
 const COMPLETE_DELAY = 2.6;
 const ATTRACT_PERIOD = 3.6;
+/** Matches the curtain's CSS fade. */
+const CURTAIN_FADE_MS = 1600;
 
 type Mode = "title" | "playing" | "paused" | "learning" | "dying" | "completing" | "ending";
 
@@ -77,11 +81,14 @@ export class App {
   private running = false;
   private perf = { acc: 0, frames: 0, cooldown: 3 };
   private revealed = false;
+  /** Shaders are built; the loading scene is sounding its last chord. */
+  private revealing = false;
   private worldUnsub: (() => void)[] = [];
 
   constructor(
     private readonly renderer: Renderer,
     private readonly input: Input,
+    private readonly loader: Loader | null = null,
   ) {
     this.stage = new Stage(renderer, input);
     this.save = loadSave();
@@ -152,15 +159,39 @@ export class App {
     requestAnimationFrame(this.frame);
   };
 
-  /** Keep the curtain closed (with its loading note) until every shader is built. */
+  /**
+   * Keep the curtain (and the loading scene on it) up until every shader is
+   * built; then let the scene sound its last chord and lift the curtain on the
+   * same room, now drawn by the game.
+   */
   private reveal(): boolean {
     if (this.revealed) return true;
-    if (!this.renderer.ready) return false;
-    this.revealed = true;
-    this.perf.cooldown = 2;
-    this.ui.loading(false);
-    this.ui.curtain(true);
-    return true;
+    // The game stays still while the loading scene sounds its chord: it has the machine to itself.
+    if (this.revealing) return false;
+    const ready = this.renderer.ready;
+    this.loader?.progress(this.renderer.buildStatus);
+    if (!ready) return false;
+    const open = () => {
+      this.revealed = true;
+      this.revealing = false;
+      this.perf.cooldown = 2;
+      this.ui.loading(false);
+      this.ui.curtain(true);
+      if (this.mode === "title") {
+        // The same room is already there under the curtain, and the creature calls as it lifts.
+        this.stage.post.fade = 0;
+        this.attract.hold = 0.45;
+        this.attract.timer = ATTRACT_PERIOD;
+      }
+      window.setTimeout(() => this.loader?.dispose(), CURTAIN_FADE_MS + 200);
+    };
+    if (!this.loader) {
+      open();
+      return true;
+    }
+    this.revealing = true;
+    void this.loader.finish().then(open);
+    return false;
   }
 
   /** Lower the internal resolution when frames run long; creep back up when there is headroom. */
@@ -274,11 +305,11 @@ export class App {
     this.ui.hidePause();
     this.ui.clearMessage();
     this.ui.clearHints();
-    this.stage.cameraOffset = { x: -2.6, y: 0.6 };
+    this.stage.cameraOffset = { ...TITLE_CAMERA_OFFSET };
     this.stage.dangerEnabled = false;
     const world = this.loadWorld(SHOWCASE);
     world.player.invulnerable = true;
-    world.player.facing = Math.PI * 0.12;
+    world.player.facing = TITLE_FACING;
     for (const w of world.wardens) w.deaf = true;
     this.stage.post.fade = 1;
     this.attract = { timer: 1.2, hold: 0, charge: 0 };
